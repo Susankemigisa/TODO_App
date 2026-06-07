@@ -1,5 +1,5 @@
 ﻿import { Form, useLoaderData } from "react-router";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { db } from "../db.server";
 import type { Route } from "./+types/home";
 
@@ -16,7 +16,7 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const todos = await db.todo.findMany({
     where,
-    orderBy: { createdAt: "desc" },
+    orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
   });
 
   const totalCount = await db.todo.count();
@@ -32,8 +32,16 @@ export async function action({ request }: Route.ActionArgs) {
 
   if (intent === "create") {
     const title = formData.get("title") as string;
+    const priority = (formData.get("priority") as string) || "MEDIUM";
+    const dueDateRaw = formData.get("dueDate") as string;
     if (!title || title.trim() === "") return { error: "Title cannot be empty" };
-    await db.todo.create({ data: { title: title.trim() } });
+    await db.todo.create({
+      data: {
+        title: title.trim(),
+        priority: priority as "LOW" | "MEDIUM" | "HIGH",
+        dueDate: dueDateRaw ? new Date(dueDateRaw) : null,
+      },
+    });
   }
 
   if (intent === "toggle") {
@@ -66,10 +74,42 @@ export function links() {
   ];
 }
 
+const PRIORITY_STYLES: Record<string, { label: string; color: string; bg: string }> = {
+  LOW:    { label: "Low",    color: "#6B7280", bg: "rgba(107,114,128,0.15)" },
+  MEDIUM: { label: "Medium", color: "#C9A96E", bg: "rgba(201,169,110,0.20)" },
+  HIGH:   { label: "High",   color: "#FF4444", bg: "rgba(255,68,68,0.15)"   },
+};
+
+function PriorityBadge({ priority }: { priority: string }) {
+  const s = PRIORITY_STYLES[priority] ?? PRIORITY_STYLES.MEDIUM;
+  return (
+    <span style={{
+      fontSize: "10px", fontWeight: 700, letterSpacing: "0.08em",
+      textTransform: "uppercase", padding: "2px 8px", borderRadius: "99px",
+      color: s.color, background: s.bg, border: `1px solid ${s.color}33`,
+    }}>
+      {s.label}
+    </span>
+  );
+}
+
+function formatDueDate(date: string | Date | null) {
+  if (!date) return null;
+  const d = new Date(date);
+  const now = new Date();
+  const diffDays = Math.ceil((d.getTime() - now.setHours(0,0,0,0)) / (1000*60*60*24));
+  const formatted = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  if (diffDays < 0) return { text: `Overdue · ${formatted}`, status: 'overdue', color: '#DC2626' };
+  if (diffDays === 0) return { text: `Due today · ${formatted}`, status: 'today', color: '#C9A96E' };
+  if (diffDays === 1) return { text: `Due tomorrow · ${formatted}`, status: 'today', color: '#C9A96E' };
+  return { text: `Due ${formatted}`, status: 'normal', color: '#6B7280' };
+}
+
 export default function Home() {
   const { todos, filter, totalCount, activeCount, completedCount } =
     useLoaderData<typeof loader>();
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [showFullForm, setShowFullForm] = useState(false);
 
   const progressPct =
     totalCount === 0 ? 0 : Math.round((completedCount / totalCount) * 100);
@@ -79,7 +119,6 @@ export default function Home() {
       <style>{`
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-        /* ── LIGHT THEME (default) ── */
         :root {
           --bg-page:       #F5F2EC;
           --bg-card:       #FFFFFF;
@@ -88,32 +127,24 @@ export default function Home() {
           --bg-filter:     #F0EDE7;
           --bg-item-hover: #F9F7F3;
           --bg-edit-input: #FFFDF9;
-
           --text-primary:  #111111;
           --text-muted:    #999999;
           --text-faint:    #CCCCCC;
           --text-banner:   #FFFFFF;
           --text-banner-muted: #777777;
-
           --border:        #E8E3DA;
           --border-focus:  #C9A96E;
-
           --gold:          #C9A96E;
           --gold-glow:     rgba(201,169,110,0.15);
-
           --btn-bg:        #111111;
           --btn-hover:     #2a2a2a;
-
           --filter-active-bg:    #FFFFFF;
           --filter-active-color: #111111;
           --filter-active-shadow: 0 1px 6px rgba(0,0,0,0.10);
-
           --shadow-card:   0 4px 8px rgba(0,0,0,0.04), 0 24px 64px rgba(0,0,0,0.09);
-
           --stat-divider:  #F0EDE7;
         }
 
-        /* ── DARK THEME ── */
         @media (prefers-color-scheme: dark) {
           :root {
             --bg-page:       #0E0E0E;
@@ -123,28 +154,21 @@ export default function Home() {
             --bg-filter:     #242424;
             --bg-item-hover: #222222;
             --bg-edit-input: #1E1C18;
-
             --text-primary:  #F0EDE7;
             --text-muted:    #999999;
             --text-faint:    #808080;
             --text-banner:   #F0EDE7;
             --text-banner-muted: #808080;
-
             --border:        #2E2E2E;
             --border-focus:  #C9A96E;
-
             --gold:          #C9A96E;
             --gold-glow:     rgba(201,169,110,0.12);
-
             --btn-bg:        #F0EDE7;
             --btn-hover:     #FFFFFF;
-
             --filter-active-bg:    #333333;
             --filter-active-color: #F0EDE7;
             --filter-active-shadow: 0 1px 6px rgba(0,0,0,0.4);
-
             --shadow-card:   0 4px 8px rgba(0,0,0,0.3), 0 24px 64px rgba(0,0,0,0.5);
-
             --stat-divider:  #2A2A2A;
           }
         }
@@ -162,7 +186,6 @@ export default function Home() {
           display: flex;
           flex-direction: column;
           align-items: center;
-          justify-content: flex-start;
           padding: 60px 20px 0;
         }
 
@@ -176,78 +199,47 @@ export default function Home() {
           border: 1px solid var(--border);
         }
 
-        /* ── BANNER ── */
         .banner {
           background: var(--bg-banner);
           padding: 38px 44px 32px;
         }
 
         .banner-label {
-          font-size: 10px;
-          font-weight: 600;
-          letter-spacing: 0.22em;
-          text-transform: uppercase;
-          color: var(--text-banner-muted);
-          margin-bottom: 8px;
+          font-size: 10px; font-weight: 600; letter-spacing: 0.22em;
+          text-transform: uppercase; color: var(--text-banner-muted); margin-bottom: 8px;
         }
 
         .banner-title {
           font-family: 'DM Serif Display', serif;
-          font-size: 44px;
-          font-weight: 400;
-          color: var(--text-banner);
-          line-height: 1.05;
+          font-size: 44px; font-weight: 400; color: var(--text-banner); line-height: 1.05;
         }
 
-        .banner-title em {
-          font-style: italic;
-          color: var(--gold);
-        }
+        .banner-title em { font-style: italic; color: var(--gold); }
 
         .progress-row {
-          display: flex;
-          align-items: center;
-          gap: 14px;
-          margin-top: 28px;
+          display: flex; align-items: center; gap: 14px; margin-top: 28px;
         }
 
         .progress-track {
-          flex: 1;
-          height: 2px;
-          background: #2a2a2a;
-          border-radius: 99px;
-          overflow: hidden;
-        }
-
-        @media (prefers-color-scheme: dark) {
-          .progress-track { background: #333; }
+          flex: 1; height: 2px; background: #2a2a2a; border-radius: 99px; overflow: hidden;
         }
 
         .progress-fill {
-          height: 100%;
-          background: var(--gold);
-          border-radius: 99px;
+          height: 100%; background: var(--gold); border-radius: 99px;
           transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         .progress-pct {
-          font-size: 12px;
-          font-weight: 600;
-          color: var(--text-banner-muted);
-          white-space: nowrap;
-          letter-spacing: 0.04em;
+          font-size: 12px; font-weight: 600; color: var(--text-banner-muted);
+          white-space: nowrap; letter-spacing: 0.04em;
         }
 
-        /* ── STATS ── */
         .stats {
-          display: flex;
-          border-bottom: 1px solid var(--stat-divider);
+          display: flex; border-bottom: 1px solid var(--stat-divider);
         }
 
         .stat {
-          flex: 1;
-          padding: 20px 0;
-          text-align: center;
+          flex: 1; padding: 20px 0; text-align: center;
           border-right: 1px solid var(--stat-divider);
         }
 
@@ -255,43 +247,26 @@ export default function Home() {
 
         .stat-num {
           font-family: 'DM Serif Display', serif;
-          font-size: 30px;
-          color: var(--text-primary);
-          line-height: 1;
+          font-size: 30px; color: var(--text-primary); line-height: 1;
         }
 
         .stat-label {
-          font-size: 10px;
-          font-weight: 700;
-          letter-spacing: 0.15em;
-          text-transform: uppercase;
-          color: var(--text-muted);
-          margin-top: 5px;
+          font-size: 10px; font-weight: 700; letter-spacing: 0.15em;
+          text-transform: uppercase; color: var(--text-muted); margin-top: 5px;
         }
 
-        /* ── BODY ── */
-        .body {
-          padding: 32px 44px 40px;
-        }
+        .body { padding: 32px 44px 40px; }
 
         /* ── ADD FORM ── */
-        .add-form {
-          display: flex;
-          gap: 10px;
-          margin-bottom: 24px;
+        .add-row {
+          display: flex; gap: 10px; margin-bottom: 8px;
         }
 
         .add-input {
-          flex: 1;
-          border: 1.5px solid var(--border);
-          border-radius: 12px;
-          padding: 13px 17px;
-          font-family: 'DM Sans', sans-serif;
-          font-size: 14px;
-          font-weight: 400;
-          color: var(--text-primary);
-          background: var(--bg-input);
-          outline: none;
+          flex: 1; border: 1.5px solid var(--border); border-radius: 12px;
+          padding: 13px 17px; font-family: 'DM Sans', sans-serif;
+          font-size: 14px; font-weight: 400; color: var(--text-primary);
+          background: var(--bg-input); outline: none;
           transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
         }
 
@@ -304,232 +279,180 @@ export default function Home() {
         }
 
         .add-btn {
-          background: var(--btn-bg);
-          color: var(--bg-banner);
-          border: none;
-          border-radius: 12px;
-          padding: 13px 24px;
-          font-family: 'DM Sans', sans-serif;
-          font-size: 14px;
-          font-weight: 700;
-          cursor: pointer;
-          letter-spacing: 0.02em;
-          transition: background 0.2s, transform 0.1s;
-          white-space: nowrap;
+          background: var(--btn-bg); color: var(--bg-card);
+          border: none; border-radius: 12px; padding: 13px 24px;
+          font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 700;
+          cursor: pointer; letter-spacing: 0.02em;
+          transition: background 0.2s, transform 0.1s; white-space: nowrap;
         }
 
         .add-btn:hover { background: var(--btn-hover); }
         .add-btn:active { transform: scale(0.97); }
 
+        .expand-btn {
+          background: none; border: none; font-family: 'DM Sans', sans-serif;
+          font-size: 12px; font-weight: 500; color: var(--text-muted);
+          cursor: pointer; padding: 4px 2px; margin-bottom: 20px;
+          transition: color 0.15s;
+        }
+
+        .expand-btn:hover { color: var(--text-primary); }
+
+        .extra-fields {
+          display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+          margin-bottom: 16px;
+        }
+
+        .field-label {
+          display: block; font-size: 11px; font-weight: 700;
+          letter-spacing: 0.12em; text-transform: uppercase;
+          color: var(--text-muted); margin-bottom: 6px;
+        }
+
+        .field-select, .field-date {
+          width: 100%; border: 1.5px solid var(--border); border-radius: 10px;
+          padding: 10px 13px; font-family: 'DM Sans', sans-serif;
+          font-size: 13px; color: var(--text-primary);
+          background: var(--bg-input); outline: none;
+          transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .field-select:focus, .field-date:focus {
+          border-color: var(--border-focus);
+          box-shadow: 0 0 0 3px var(--gold-glow);
+        }
+
         /* ── FILTERS ── */
         .filters {
-          display: flex;
-          gap: 4px;
-          background: var(--bg-filter);
-          border-radius: 12px;
-          padding: 4px;
-          margin-bottom: 24px;
+          display: flex; gap: 4px; background: var(--bg-filter);
+          border-radius: 12px; padding: 4px; margin-bottom: 24px;
         }
 
         .filter-tab {
-          flex: 1;
-          text-align: center;
-          padding: 9px;
-          border-radius: 9px;
-          font-size: 13px;
-          font-weight: 500;
-          color: var(--text-muted);
-          text-decoration: none;
-          transition: all 0.2s;
-          letter-spacing: 0.01em;
+          flex: 1; text-align: center; padding: 9px; border-radius: 9px;
+          font-size: 13px; font-weight: 500; color: var(--text-muted);
+          text-decoration: none; transition: all 0.2s; letter-spacing: 0.01em;
         }
 
         .filter-tab:hover { color: var(--text-primary); }
 
         .filter-tab.active {
-          background: var(--filter-active-bg);
-          color: var(--filter-active-color);
-          font-weight: 700;
-          box-shadow: var(--filter-active-shadow);
+          background: var(--filter-active-bg); color: var(--filter-active-color);
+          font-weight: 700; box-shadow: var(--filter-active-shadow);
         }
 
         /* ── LIST ── */
         .todo-list {
-          list-style: none;
-          display: flex;
-          flex-direction: column;
-          gap: 2px;
+          list-style: none; display: flex; flex-direction: column; gap: 2px;
         }
 
         .todo-empty {
-          padding: 52px 0;
-          text-align: center;
+          padding: 52px 0; text-align: center;
           font-family: 'DM Serif Display', serif;
-          font-style: italic;
-          font-size: 16px;
-          color: var(--text-faint);
+          font-style: italic; font-size: 16px; color: var(--text-faint);
         }
 
         .todo-item {
-          border-radius: 12px;
-          padding: 13px 14px;
-          transition: background 0.15s;
+          border-radius: 12px; padding: 13px 14px; transition: background 0.15s;
         }
 
         .todo-item:hover { background: var(--bg-item-hover); }
 
-        .todo-view {
-          display: flex;
-          align-items: center;
-          gap: 14px;
-        }
+        .todo-view { display: flex; align-items: flex-start; gap: 14px; }
 
         .toggle-btn {
-          width: 22px;
-          height: 22px;
-          border-radius: 50%;
-          border: 2px solid var(--border);
-          background: transparent;
-          cursor: pointer;
-          flex-shrink: 0;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 11px;
-          font-weight: 700;
-          color: transparent;
-          transition: all 0.2s;
+          width: 22px; height: 22px; border-radius: 50%;
+          border: 2px solid var(--border); background: transparent;
+          cursor: pointer; flex-shrink: 0; margin-top: 2px;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 11px; font-weight: 700; color: transparent; transition: all 0.2s;
         }
 
         .toggle-btn:hover { border-color: var(--gold); }
 
         .toggle-btn.done {
-          background: var(--text-primary);
-          border-color: var(--text-primary);
+          background: var(--text-primary); border-color: var(--text-primary);
           color: var(--bg-card);
         }
 
         .todo-content { flex: 1; min-width: 0; }
 
+        .todo-title-row {
+          display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+        }
+
         .todo-title {
-          font-size: 14px;
-          font-weight: 500;
-          color: var(--text-primary);
-          line-height: 1.4;
+          font-size: 14px; font-weight: 500; color: var(--text-primary); line-height: 1.4;
         }
 
         .todo-title.done {
-          text-decoration: line-through;
-          color: var(--text-faint);
-          font-weight: 400;
+          text-decoration: line-through; color: var(--text-faint); font-weight: 400;
         }
 
-        .todo-date {
-          font-size: 11px;
-          color: var(--text-faint);
-          margin-top: 2px;
-          font-weight: 400;
+        .todo-meta {
+          display: flex; align-items: center; gap: 8px; margin-top: 4px; flex-wrap: wrap;
+        }
+
+        .todo-date-text {
+          font-size: 11px; font-weight: 500;
+        }
+
+        .todo-created {
+          font-size: 11px; color: var(--text-faint);
         }
 
         .todo-actions {
-          display: flex;
-          gap: 2px;
-          opacity: 0;
-          transition: opacity 0.15s;
+          display: flex; gap: 2px; opacity: 0; transition: opacity 0.15s; flex-shrink: 0;
         }
 
         .todo-item:hover .todo-actions { opacity: 1; }
 
         .action-btn {
-          border: none;
-          background: transparent;
-          padding: 5px 10px;
-          border-radius: 8px;
-          font-size: 12px;
-          font-weight: 600;
-          cursor: pointer;
-          font-family: 'DM Sans', sans-serif;
-          color: var(--text-muted);
-          transition: background 0.15s, color 0.15s;
-          letter-spacing: 0.01em;
+          border: none; background: transparent; padding: 5px 10px;
+          border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer;
+          font-family: 'DM Sans', sans-serif; color: var(--text-muted);
+          transition: background 0.15s, color 0.15s; letter-spacing: 0.01em;
+          text-decoration: none; display: inline-block;
         }
 
-        .action-btn:hover {
-          background: var(--bg-filter);
-          color: var(--text-primary);
-        }
+        .action-btn:hover { background: var(--bg-filter); color: var(--text-primary); }
+        .action-btn.delete:hover { background: rgba(220,38,38,0.08); color: #DC2626; }
 
-        .action-btn.delete:hover {
-          background: rgba(220, 38, 38, 0.08);
-          color: #DC2626;
-        }
-
-        /* ── EDIT FORM ── */
-        .edit-form {
-          display: flex;
-          gap: 8px;
-          width: 100%;
-        }
+        .edit-form { display: flex; gap: 8px; width: 100%; }
 
         .edit-input {
-          flex: 1;
-          border: 1.5px solid var(--border-focus);
-          border-radius: 10px;
-          padding: 10px 14px;
-          font-family: 'DM Sans', sans-serif;
-          font-size: 14px;
-          font-weight: 500;
-          color: var(--text-primary);
-          background: var(--bg-edit-input);
-          outline: none;
+          flex: 1; border: 1.5px solid var(--border-focus); border-radius: 10px;
+          padding: 10px 14px; font-family: 'DM Sans', sans-serif;
+          font-size: 14px; font-weight: 500; color: var(--text-primary);
+          background: var(--bg-edit-input); outline: none;
           box-shadow: 0 0 0 3px var(--gold-glow);
         }
 
         .save-btn {
-          background: var(--btn-bg);
-          color: var(--bg-banner);
-          border: none;
-          border-radius: 10px;
-          padding: 10px 18px;
-          font-size: 13px;
-          font-weight: 700;
-          font-family: 'DM Sans', sans-serif;
-          cursor: pointer;
-          transition: background 0.2s;
+          background: var(--btn-bg); color: var(--bg-card);
+          border: none; border-radius: 10px; padding: 10px 18px;
+          font-size: 13px; font-weight: 700; font-family: 'DM Sans', sans-serif;
+          cursor: pointer; transition: background 0.2s;
         }
 
         .save-btn:hover { background: var(--btn-hover); }
 
         .cancel-btn {
-          background: transparent;
-          border: 1.5px solid var(--border);
-          border-radius: 10px;
-          padding: 10px 14px;
-          font-size: 13px;
-          font-weight: 500;
-          font-family: 'DM Sans', sans-serif;
-          cursor: pointer;
-          color: var(--text-muted);
+          background: transparent; border: 1.5px solid var(--border);
+          border-radius: 10px; padding: 10px 14px; font-size: 13px; font-weight: 500;
+          font-family: 'DM Sans', sans-serif; cursor: pointer; color: var(--text-muted);
           transition: background 0.15s;
         }
 
         .cancel-btn:hover { background: var(--bg-filter); }
 
-        /* ── PAGE FOOTER ── */
         .page-footer {
-          margin-top: 32px;
-          margin-bottom: 48px;
-          text-align: center;
-          font-size: 11px;
-          font-weight: 600;
-          letter-spacing: 0.18em;
-          text-transform: uppercase;
-          color: var(--text-faint);
+          margin-top: 32px; margin-bottom: 48px; text-align: center;
+          font-size: 11px; font-weight: 600; letter-spacing: 0.18em;
+          text-transform: uppercase; color: var(--text-faint);
         }
 
-        .page-footer span {
-          color: var(--gold);
-        }
+        .page-footer span { color: var(--gold); }
       `}</style>
 
       <div className="page">
@@ -565,14 +488,43 @@ export default function Home() {
           <div className="body">
 
             {/* ADD FORM */}
-            <Form method="post" className="add-form">
+            <Form method="post" onSubmit={(e) => {
+              setTimeout(() => (e.target as HTMLFormElement).reset(), 0);
+            }}>
               <input type="hidden" name="intent" value="create" />
-              <input
-                name="title"
-                placeholder="Add a new task…"
-                className="add-input"
-              />
-              <button type="submit" className="add-btn">Add</button>
+              <div className="add-row">
+                <input
+                  name="title"
+                  placeholder="Add a new task…"
+                  className="add-input"
+                />
+                <button type="submit" className="add-btn">Add</button>
+              </div>
+
+              <button
+                type="button"
+                className="expand-btn"
+                onClick={() => setShowFullForm(v => !v)}
+              >
+                {showFullForm ? "▲ Hide options" : "▼ Set priority & due date"}
+              </button>
+
+              {showFullForm && (
+                <div className="extra-fields">
+                  <div>
+                    <label htmlFor="priority" className="field-label">Priority</label>
+                    <select id="priority" name="priority" className="field-select" defaultValue="MEDIUM">
+                      <option value="LOW">Low</option>
+                      <option value="MEDIUM">Medium</option>
+                      <option value="HIGH">High</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="dueDate" className="field-label">Due&nbsp;Date</label>
+                    <input id="dueDate" type="date" name="dueDate" className="field-date" />
+                  </div>
+                </div>
+              )}
             </Form>
 
             {/* FILTERS */}
@@ -593,85 +545,98 @@ export default function Home() {
               {todos.length === 0 ? (
                 <li className="todo-empty">Nothing here yet.</li>
               ) : (
-                todos.map((todo) => (
-                  <li key={todo.id} className="todo-item">
-                    {editingId === todo.id ? (
-                      <Form
-                        method="post"
-                        className="edit-form"
-                        onSubmit={() => setEditingId(null)}
-                      >
-                        <input type="hidden" name="intent" value="edit" />
-                        <input type="hidden" name="id" value={todo.id} />
-                        <input
-                          name="title"
-                          defaultValue={todo.title}
-                          placeholder="Edit task title…"
-                          aria-label="Edit task title"
-                          autoFocus
-                          className="edit-input"
-                        />
-                        <button type="submit" className="save-btn">Save</button>
-                        <button
-                          type="button"
-                          className="cancel-btn"
-                          onClick={() => setEditingId(null)}
+                todos.map((todo) => {
+                  const due = formatDueDate((todo as any).dueDate);
+                  return (
+                    <li key={todo.id} className="todo-item">
+                      {editingId === todo.id ? (
+                        <Form
+                          method="post"
+                          className="edit-form"
+                          onSubmit={() => setEditingId(null)}
                         >
-                          Cancel
-                        </button>
-                      </Form>
-                    ) : (
-                      <div className="todo-view">
-                        <Form method="post">
-                          <input type="hidden" name="intent" value="toggle" />
+                          <input type="hidden" name="intent" value="edit" />
                           <input type="hidden" name="id" value={todo.id} />
-                          <input type="hidden" name="done" value={String(todo.done)} />
+                          <label htmlFor={`title-${todo.id}`} className="sr-only">Edit task title</label>
+                          <input
+                            id={`title-${todo.id}`}
+                            name="title"
+                            defaultValue={todo.title}
+                            autoFocus
+                            className="edit-input"
+                            placeholder="Task title"
+                            title="Enter task title"
+                          />
+                          <button type="submit" className="save-btn">Save</button>
                           <button
-                            type="submit"
-                            className={`toggle-btn${todo.done ? " done" : ""}`}
+                            type="button"
+                            className="cancel-btn"
+                            onClick={() => setEditingId(null)}
                           >
-                            ✓
+                            Cancel
                           </button>
                         </Form>
-
-                        <div className="todo-content">
-                          <p className={`todo-title${todo.done ? " done" : ""}`}>
-                            {todo.title}
-                          </p>
-                          <p className="todo-date">
-                            {new Date(todo.createdAt).toLocaleDateString("en-US", {
-                              month: "short",
-                              day: "numeric",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
-                          </p>
-                        </div>
-
-                        <div className="todo-actions">
-                          <a href={`/todos/${todo.id}/edit`}
-                          className="action-btn"
-                        >
-                          Edit
-                        </a>
+                      ) : (
+                        <div className="todo-view">
                           <Form method="post">
-                            <input type="hidden" name="intent" value="delete" />
+                            <input type="hidden" name="intent" value="toggle" />
                             <input type="hidden" name="id" value={todo.id} />
-                            <button type="submit" className="action-btn delete">
-                              Delete
+                            <input type="hidden" name="done" value={String(todo.done)} />
+                            <button
+                              type="submit"
+                              className={`toggle-btn${todo.done ? " done" : ""}`}
+                            >
+                              ✓
                             </button>
                           </Form>
+
+                          <div className="todo-content">
+                            <div className="todo-title-row">
+                              <span className={`todo-title${todo.done ? " done" : ""}`}>
+                                {todo.title}
+                              </span>
+                              {/* some todos may not have a priority field (older items) */}
+                              <PriorityBadge priority={(todo as any).priority ?? 'low'} />
+                            </div>
+                            <div className="todo-meta">
+                              {due && (
+                                <span className="todo-date-text" style={{ color: due.color }}>
+                                  {due.text}
+                                </span>
+                              )}
+                              <span className="todo-created">
+                                Added {new Date(todo.createdAt).toLocaleDateString("en-US", {
+                                  month: "short", day: "numeric",
+                                })}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="todo-actions">
+                            <a
+                              href={`/todos/${todo.id}/edit`}
+                              className="action-btn"
+                            >
+                              Edit
+                            </a>
+                            <Form method="post">
+                              <input type="hidden" name="intent" value="delete" />
+                              <input type="hidden" name="id" value={todo.id} />
+                              <button type="submit" className="action-btn delete">
+                                Delete
+                              </button>
+                            </Form>
+                          </div>
                         </div>
-                      </div>
-                    )}
-                  </li>
-                ))
+                      )}
+                    </li>
+                  );
+                })
               )}
             </ul>
           </div>
         </div>
 
-        {/* PAGE FOOTER — outside the card */}
         <footer className="page-footer">
           Built with <span>Remix</span> · <span>Prisma</span> · <span>PostgreSQL</span>
         </footer>

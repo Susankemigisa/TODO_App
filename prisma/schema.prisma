@@ -6,10 +6,18 @@ datasource db {
   provider = "postgresql"
 }
 
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
 model Todo {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   title     String
-  done      Boolean  @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  done      Boolean   @default(false)
+  priority  Priority  @default(MEDIUM)
+  dueDate   DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 }
