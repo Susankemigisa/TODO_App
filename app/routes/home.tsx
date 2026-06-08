@@ -571,9 +571,19 @@ export default function Home() {
           {/* BANNER */}
           <div className="banner">
             <div className="banner-top">
-              <div>
-                <p className="banner-label">Today's Focus</p>
-                <h1 className="banner-title">My <em>Tasks</em></h1>
+              <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+                <svg width="48" height="48" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <polygon points="40,4 72,40 40,76 8,40" fill="none" stroke="#C9A96E" strokeWidth="2.5"/>
+                  <line x1="8" y1="40" x2="72" y2="40" stroke="#C9A96E" strokeWidth="1" opacity="0.35"/>
+                  <line x1="40" y1="4" x2="40" y2="76" stroke="#C9A96E" strokeWidth="1" opacity="0.35"/>
+                  <line x1="8" y1="40" x2="40" y2="4" stroke="#C9A96E" strokeWidth="0.8" opacity="0.2"/>
+                  <line x1="72" y1="40" x2="40" y2="4" stroke="#C9A96E" strokeWidth="0.8" opacity="0.2"/>
+                  <polygon points="40,18 58,40 40,62 22,40" fill="#C9A96E" opacity="0.12"/>
+                </svg>
+                <div>
+                  <p className="banner-label">Today's Focus</p>
+                  <h1 className="banner-title">My <em>Tasks</em></h1>
+                </div>
               </div>
               <div className="user-info">
                 <span className="user-email">{user?.name ?? user?.email}</span>

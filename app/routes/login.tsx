@@ -250,6 +250,29 @@ export default function Login() {
           color: var(--text-faint);
         }
 
+        .google-btn {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+          width: 100%;
+          padding: 13px;
+          border: 1.5px solid var(--border);
+          border-radius: 12px;
+          background: var(--bg-card);
+          color: var(--text-primary);
+          font-family: 'DM Sans', sans-serif;
+          font-size: 14px;
+          font-weight: 600;
+          text-decoration: none;
+          cursor: pointer;
+          transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .google-btn:hover {
+          border-color: var(--border-focus);
+          box-shadow: 0 0 0 3px var(--gold-glow);
+            }
+
         .footer-link {
           text-align: center;
           margin-top: 20px;
@@ -269,6 +292,17 @@ export default function Login() {
       <div className="page">
         <div className="card">
           <div className="banner">
+            <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: "6px" }}>
+              <svg width="40" height="40" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <polygon points="40,4 72,40 40,76 8,40" fill="none" stroke="#C9A96E" strokeWidth="2.5"/>
+                <line x1="8" y1="40" x2="72" y2="40" stroke="#C9A96E" strokeWidth="1" opacity="0.35"/>
+                <line x1="40" y1="4" x2="40" y2="76" stroke="#C9A96E" strokeWidth="1" opacity="0.35"/>
+                <line x1="8" y1="40" x2="40" y2="4" stroke="#C9A96E" strokeWidth="0.8" opacity="0.2"/>
+                <line x1="72" y1="40" x2="40" y2="4" stroke="#C9A96E" strokeWidth="0.8" opacity="0.2"/>
+                <polygon points="40,18 58,40 40,62 22,40" fill="#C9A96E" opacity="0.12"/>
+              </svg>
+              <span style={{ fontFamily: "'DM Serif Display', serif", fontSize: "22px", color: "#fff", fontStyle: "italic", color: "#C9A96E" }}>Tasks</span>
+            </div>
             <p className="banner-label">Welcome Back</p>
             <h1 className="banner-title">Sign <em>In</em></h1>
           </div>
@@ -306,6 +340,16 @@ export default function Login() {
                   <span className="divider-text">or</span>
                   <div className="divider-line" />
                 </div>
+
+                <a href="/auth/google" className="google-btn">
+                    <svg width="18" height="18" viewBox="0 0 48 48">
+                        <path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.2l6.7-6.7C35.8 2.5 30.2 0 24 0 14.7 0 6.7 5.4 2.7 13.3l7.8 6C12.4 13 17.8 9.5 24 9.5z"/>
+                        <path fill="#4285F4" d="M46.6 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8c4.4-4.1 7.2-10.1 7.2-17z"/>
+                        <path fill="#FBBC05" d="M10.5 28.7A14.6 14.6 0 0 1 9.5 24c0-1.6.3-3.2.8-4.7l-7.8-6A23.9 23.9 0 0 0 0 24c0 3.9.9 7.5 2.7 10.7l7.8-6z"/>
+                        <path fill="#34A853" d="M24 48c6.2 0 11.4-2 15.2-5.5l-7.5-5.8c-2 1.4-4.6 2.3-7.7 2.3-6.2 0-11.5-4.2-13.4-9.8l-7.8 6C6.7 42.6 14.7 48 24 48z"/>
+                    </svg>
+                    Continue with Google
+                    </a>
 
               </div>
             </Form>

@@ -15,8 +15,10 @@ enum Priority {
 model User {
   id        String   @id @default(uuid())
   email     String   @unique
-  password  String
+  password  String?          // ← add the ? to make it optional
   name      String
+  avatar    String?          // ← add this
+  googleId  String?  @unique // ← add this
   createdAt DateTime @default(now())
   todos     Todo[]
 }
