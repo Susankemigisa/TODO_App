@@ -1,4 +1,4 @@
-﻿import { Form, useLoaderData } from "react-router";
+﻿import { Form, useActionData, useLoaderData } from "react-router";
 import { useState } from "react";
 import { db } from "../db.server";
 import { requireUserId, getUser } from "../session.server";
@@ -54,6 +54,16 @@ export async function action({ request }: Route.ActionArgs) {
   if (intent === "toggle") {
     const id = formData.get("id") as string;
     const done = formData.get("done") === "true";
+    const todo = await db.todo.findUnique({ where: { id, userId } });
+    if (todo && !done && todo.dueDate) {
+      const due = new Date(todo.dueDate);
+      due.setHours(0, 0, 0, 0);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (due.getTime() > today.getTime()) {
+        return { error: "Cannot mark a task done before its due date." };
+      }
+    }
     await db.todo.updateMany({ where: { id, userId }, data: { done: !done } });
   }
 
@@ -112,11 +122,23 @@ function formatDueDate(date: string | Date | null) {
   return { text: `Due ${formatted}`, color: "#6B7280" };
 }
 
+function isFutureDueDate(date: string | Date | null) {
+  if (!date) return false;
+  const due = new Date(date);
+  due.setHours(0, 0, 0, 0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return due.getTime() > today.getTime();
+}
+
 export default function Home() {
+  const actionData = useActionData<{ error?: string }>();
   const { todos, filter, totalCount, activeCount, completedCount, user } =
     useLoaderData<typeof loader>();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showFullForm, setShowFullForm] = useState(false);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const selectedDeleteTodo = deleteConfirmId ? todos.find((todo) => todo.id === deleteConfirmId) : undefined;
 
   const progressPct =
     totalCount === 0 ? 0 : Math.round((completedCount / totalCount) * 100);
@@ -424,10 +446,76 @@ export default function Home() {
         .todo-created { font-size: 11px; color: var(--text-faint); }
 
         .todo-actions {
-          display: flex; gap: 2px; opacity: 0; transition: opacity 0.15s; flex-shrink: 0;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          opacity: 0;
+          transition: opacity 0.15s;
+          flex-shrink: 0;
         }
 
         .todo-item:hover .todo-actions { opacity: 1; }
+
+        .toggle-btn.disabled {
+          opacity: 0.45;
+          cursor: not-allowed;
+          border-color: var(--border);
+        }
+
+        .modal-overlay {
+          position: fixed;
+          inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: rgba(0, 0, 0, 0.5);
+          z-index: 1000;
+          padding: 24px;
+        }
+
+        .delete-modal {
+          width: min(100%, 420px);
+          padding: 28px;
+          border-radius: 26px;
+          background: rgba(17, 17, 17, 0.96);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          box-shadow: 0 30px 80px rgba(0, 0, 0, 0.3);
+        }
+
+        .delete-modal p {
+          margin: 0 0 18px;
+          color: #fff;
+          font-size: 15px;
+          line-height: 1.6;
+          font-weight: 600;
+        }
+
+        .modal-actions {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 10px;
+          justify-content: flex-end;
+        }
+
+        .confirm-btn {
+          background: #EF4444;
+          color: #fff;
+          border: none;
+          border-radius: 999px;
+          padding: 10px 18px;
+          cursor: pointer;
+          font-size: 13px;
+          font-weight: 700;
+        }
+
+        .confirm-btn:hover { background: #DC2626; }
+
+        .form-error {
+          margin-bottom: 18px;
+          color: #DC2626;
+          font-size: 13px;
+          font-weight: 700;
+        }
 
         .action-btn {
           border: none; background: transparent; padding: 5px 10px;
@@ -518,6 +606,9 @@ export default function Home() {
 
           {/* BODY */}
           <div className="body">
+            {actionData?.error ? (
+              <div className="form-error">{actionData.error}</div>
+            ) : null}
 
             {/* ADD FORM */}
             <Form method="post" onSubmit={(e) => {
@@ -613,7 +704,9 @@ export default function Home() {
                             <input type="hidden" name="done" value={String(todo.done)} />
                             <button
                               type="submit"
-                              className={`toggle-btn${todo.done ? " done" : ""}`}
+                              className={`toggle-btn${todo.done ? " done" : ""}${isFutureDueDate(todo.dueDate) && !todo.done ? " disabled" : ""}`}
+                              disabled={isFutureDueDate(todo.dueDate) && !todo.done}
+                              title={isFutureDueDate(todo.dueDate) && !todo.done ? "Cannot complete before due date" : undefined}
                             >
                               ✓
                             </button>
@@ -647,13 +740,13 @@ export default function Home() {
                             >
                               Edit
                             </a>
-                            <Form method="post">
-                              <input type="hidden" name="intent" value="delete" />
-                              <input type="hidden" name="id" value={todo.id} />
-                              <button type="submit" className="action-btn delete">
-                                Delete
-                              </button>
-                            </Form>
+                            <button
+                              type="button"
+                              className="action-btn delete"
+                              onClick={() => setDeleteConfirmId(todo.id)}
+                            >
+                              Delete
+                            </button>
                           </div>
                         </div>
                       )}
@@ -669,6 +762,31 @@ export default function Home() {
           Built with <span>Remix</span> · <span>Prisma</span> · <span>PostgreSQL</span>
         </footer>
       </div>
+
+      {deleteConfirmId ? (
+        <div className="modal-overlay">
+          <div className="delete-modal">
+            <p>
+              Are you sure you want to delete "{selectedDeleteTodo?.title ?? "this task"}"?
+              This action cannot be undone.
+            </p>
+            <div className="modal-actions">
+              <Form method="post">
+                <input type="hidden" name="intent" value="delete" />
+                <input type="hidden" name="id" value={deleteConfirmId} />
+                <button type="submit" className="confirm-btn">Yes, delete</button>
+              </Form>
+              <button
+                type="button"
+                className="cancel-btn"
+                onClick={() => setDeleteConfirmId(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }
