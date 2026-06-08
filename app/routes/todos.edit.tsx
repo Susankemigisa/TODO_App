@@ -2,21 +2,22 @@ import { Form, useLoaderData, redirect } from "react-router";
 import { db } from "../db.server";
 import type { Route } from "./+types/todos.edit";
 
-// ── LOADER — fetch the single todo by ID ──
-export async function loader({ params }: Route.LoaderArgs) {
+import { requireUserId } from "../session.server";
+
+export async function loader({ params, request }: Route.LoaderArgs) {
+  await requireUserId(request);
   const todo = await db.todo.findUnique({
     where: { id: params.id },
   });
-
   if (!todo) throw new Response("Not Found", { status: 404 });
-
   return { todo };
 }
 
-// ── ACTION — save the updated title ──
 export async function action({ request, params }: Route.ActionArgs) {
   const formData = await request.formData();
   const title = formData.get("title") as string;
+  const priority = formData.get("priority") as string;
+  const dueDateRaw = formData.get("dueDate") as string;
 
   if (!title || title.trim() === "") {
     return { error: "Title cannot be empty" };
@@ -24,7 +25,11 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   await db.todo.update({
     where: { id: params.id },
-    data: { title: title.trim() },
+    data: {
+      title: title.trim(),
+      priority: priority as "LOW" | "MEDIUM" | "HIGH",
+      dueDate: dueDateRaw ? new Date(dueDateRaw) : null,
+    },
   });
 
   return redirect("/");
@@ -41,6 +46,11 @@ export function links() {
 
 export default function EditTodo() {
   const { todo } = useLoaderData<typeof loader>();
+
+  // Format date for the date input (needs YYYY-MM-DD)
+  const dueDateValue = todo.dueDate
+    ? new Date(todo.dueDate).toISOString().split("T")[0]
+    : "";
 
   return (
     <>
@@ -95,7 +105,6 @@ export default function EditTodo() {
           display: flex;
           flex-direction: column;
           align-items: center;
-          justify-content: flex-start;
           padding: 60px 20px 80px;
         }
 
@@ -114,12 +123,28 @@ export default function EditTodo() {
           padding: 38px 44px 32px;
         }
 
+        .back-link {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 12px;
+          font-weight: 600;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          color: #555;
+          text-decoration: none;
+          margin-bottom: 20px;
+          transition: color 0.15s;
+        }
+
+        .back-link:hover { color: #888; }
+
         .banner-label {
           font-size: 10px;
           font-weight: 600;
           letter-spacing: 0.22em;
           text-transform: uppercase;
-          color: #777;
+          color: #555;
           margin-bottom: 8px;
         }
 
@@ -130,18 +155,33 @@ export default function EditTodo() {
           line-height: 1.05;
         }
 
-        .banner-title em {
-          font-style: italic;
-          color: var(--gold);
+        .banner-title em { font-style: italic; color: var(--gold); }
+
+        .status-pill {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          margin-top: 16px;
+          padding: 5px 12px;
+          border-radius: 99px;
+          font-size: 11px;
+          font-weight: 600;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          background: rgba(255,255,255,0.06);
+          color: #666;
+          border: 1px solid rgba(255,255,255,0.08);
         }
 
-        .body {
-          padding: 36px 44px 44px;
+        .status-dot {
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
         }
 
-        .field {
-          margin-bottom: 24px;
-        }
+        .body { padding: 36px 44px 44px; }
+
+        .fields { display: flex; flex-direction: column; gap: 22px; }
 
         .field-label {
           display: block;
@@ -150,7 +190,7 @@ export default function EditTodo() {
           letter-spacing: 0.15em;
           text-transform: uppercase;
           color: var(--text-muted);
-          margin-bottom: 10px;
+          margin-bottom: 8px;
         }
 
         .field-input {
@@ -173,36 +213,64 @@ export default function EditTodo() {
           background: var(--bg-card);
         }
 
+        .two-col {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 16px;
+        }
+
+        .field-select, .field-date {
+          width: 100%;
+          border: 1.5px solid var(--border);
+          border-radius: 12px;
+          padding: 13px 16px;
+          font-family: 'DM Sans', sans-serif;
+          font-size: 14px;
+          color: var(--text-primary);
+          background: var(--bg-input);
+          outline: none;
+          transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .field-select:focus, .field-date:focus {
+          border-color: var(--border-focus);
+          box-shadow: 0 0 0 3px var(--gold-glow);
+        }
+
+        .meta-box {
+          background: var(--bg-input);
+          border: 1px solid var(--border);
+          border-radius: 12px;
+          padding: 14px 18px;
+          font-size: 12px;
+          color: var(--text-muted);
+          line-height: 1.8;
+        }
+
+        .meta-box strong {
+          color: var(--text-primary);
+          font-weight: 600;
+        }
+
         .error {
-          margin-top: 8px;
           font-size: 13px;
           color: #DC2626;
           font-weight: 500;
-        }
-
-        .meta {
-          font-size: 12px;
-          color: var(--text-faint);
-          margin-bottom: 32px;
-          line-height: 1.6;
-        }
-
-        .meta strong {
-          color: var(--text-muted);
-          font-weight: 600;
+          margin-top: 6px;
         }
 
         .actions {
           display: flex;
           gap: 10px;
+          margin-top: 32px;
         }
 
         .save-btn {
           background: var(--btn-bg);
-          color: var(--bg-banner);
+          color: var(--bg-card);
           border: none;
           border-radius: 12px;
-          padding: 13px 28px;
+          padding: 14px 32px;
           font-family: 'DM Sans', sans-serif;
           font-size: 14px;
           font-weight: 700;
@@ -219,7 +287,7 @@ export default function EditTodo() {
           align-items: center;
           border: 1.5px solid var(--border);
           border-radius: 12px;
-          padding: 13px 22px;
+          padding: 14px 24px;
           font-family: 'DM Sans', sans-serif;
           font-size: 14px;
           font-weight: 500;
@@ -250,50 +318,84 @@ export default function EditTodo() {
         <div className="card">
 
           <div className="banner">
+            <a href="/" className="back-link">← Back to tasks</a>
             <p className="banner-label">Editing Task</p>
-            <h1 className="banner-title">
-              <em>Edit</em> Task
-            </h1>
+            <h1 className="banner-title"><em>Edit</em> Task</h1>
+            <div className="status-pill">
+              <span
+                className="status-dot"
+                style={{ background: todo.done ? "#C9A96E" : "#6B7280" }}
+              />
+              {todo.done ? "Completed" : "Active"}
+            </div>
           </div>
 
           <div className="body">
-            <div className="meta">
-              <strong>Created:</strong>{" "}
-              {new Date(todo.createdAt).toLocaleDateString("en-US", {
-                weekday: "long",
-                year: "numeric",
-                month: "long",
-                day: "numeric",
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-              <br />
-              <strong>Status:</strong>{" "}
-              {todo.done ? "Completed ✓" : "Active"}
-            </div>
-
             <Form method="post">
-              <div className="field">
-                <label className="field-label" htmlFor="title">
-                  Task Title
-                </label>
-                <input
-                  id="title"
-                  name="title"
-                  defaultValue={todo.title}
-                  autoFocus
-                  className="field-input"
-                  placeholder="Enter task title…"
-                />
+              <div className="fields">
+
+                {/* TITLE */}
+                <div>
+                  <label className="field-label" htmlFor="title">Task Title</label>
+                  <input
+                    id="title"
+                    name="title"
+                    defaultValue={todo.title}
+                    autoFocus
+                    className="field-input"
+                    placeholder="Enter task title…"
+                  />
+                </div>
+
+                {/* PRIORITY + DUE DATE */}
+                <div className="two-col">
+                  <div>
+                    <label className="field-label" htmlFor="priority">Priority</label>
+                    <select
+                      id="priority"
+                      name="priority"
+                      className="field-select"
+                      defaultValue={todo.priority}
+                      title="Select task priority"
+                    >
+                      <option value="LOW">Low</option>
+                      <option value="MEDIUM">Medium</option>
+                      <option value="HIGH">High</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="field-label" htmlFor="dueDate">Due Date</label>
+                    <input
+                      id="dueDate"
+                      type="date"
+                      name="dueDate"
+                      className="field-date"
+                      defaultValue={dueDateValue}
+                      title="Select due date"
+                    />
+                  </div>
+                </div>
+
+                {/* META INFO */}
+                <div className="meta-box">
+                  <strong>Created:</strong>{" "}
+                  {new Date(todo.createdAt).toLocaleDateString("en-US", {
+                    weekday: "long", year: "numeric",
+                    month: "long", day: "numeric",
+                  })}
+                  <br />
+                  <strong>Last updated:</strong>{" "}
+                  {new Date(todo.updatedAt).toLocaleDateString("en-US", {
+                    month: "short", day: "numeric",
+                    hour: "2-digit", minute: "2-digit",
+                  })}
+                </div>
+
               </div>
 
               <div className="actions">
-                <button type="submit" className="save-btn">
-                  Save Changes
-                </button>
-                <a href="/" className="cancel-link">
-                  Cancel
-                </a>
+                <button type="submit" className="save-btn">Save Changes</button>
+                <a href="/" className="cancel-link">Cancel</a>
               </div>
             </Form>
           </div>

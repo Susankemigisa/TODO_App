@@ -1,32 +1,38 @@
 ﻿import { Form, useLoaderData } from "react-router";
 import { useState } from "react";
 import { db } from "../db.server";
+import { requireUserId, getUser } from "../session.server";
 import type { Route } from "./+types/home";
 
 export async function loader({ request }: Route.LoaderArgs) {
+  const userId = await requireUserId(request);
+  const user = await getUser(request);
+
   const url = new URL(request.url);
   const filter = url.searchParams.get("filter") ?? "all";
 
+  const baseWhere = { userId };
   const where =
     filter === "active"
-      ? { done: false }
+      ? { ...baseWhere, done: false }
       : filter === "completed"
-      ? { done: true }
-      : {};
+      ? { ...baseWhere, done: true }
+      : baseWhere;
 
   const todos = await db.todo.findMany({
     where,
     orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
   });
 
-  const totalCount = await db.todo.count();
-  const activeCount = await db.todo.count({ where: { done: false } });
-  const completedCount = await db.todo.count({ where: { done: true } });
+  const totalCount = await db.todo.count({ where: baseWhere });
+  const activeCount = await db.todo.count({ where: { ...baseWhere, done: false } });
+  const completedCount = await db.todo.count({ where: { ...baseWhere, done: true } });
 
-  return { todos, filter, totalCount, activeCount, completedCount };
+  return { todos, filter, totalCount, activeCount, completedCount, user };
 }
 
 export async function action({ request }: Route.ActionArgs) {
+  const userId = await requireUserId(request);
   const formData = await request.formData();
   const intent = formData.get("intent");
 
@@ -40,6 +46,7 @@ export async function action({ request }: Route.ActionArgs) {
         title: title.trim(),
         priority: priority as "LOW" | "MEDIUM" | "HIGH",
         dueDate: dueDateRaw ? new Date(dueDateRaw) : null,
+        user: { connect: { id: userId } },
       },
     });
   }
@@ -47,19 +54,19 @@ export async function action({ request }: Route.ActionArgs) {
   if (intent === "toggle") {
     const id = formData.get("id") as string;
     const done = formData.get("done") === "true";
-    await db.todo.update({ where: { id }, data: { done: !done } });
+    await db.todo.updateMany({ where: { id, userId }, data: { done: !done } });
   }
 
   if (intent === "delete") {
     const id = formData.get("id") as string;
-    await db.todo.delete({ where: { id } });
+    await db.todo.deleteMany({ where: { id, userId } });
   }
 
   if (intent === "edit") {
     const id = formData.get("id") as string;
     const title = formData.get("title") as string;
     if (!title || title.trim() === "") return { error: "Title cannot be empty" };
-    await db.todo.update({ where: { id }, data: { title: title.trim() } });
+    await db.todo.updateMany({ where: { id, userId }, data: { title: title.trim() } });
   }
 
   return null;
@@ -85,7 +92,7 @@ function PriorityBadge({ priority }: { priority: string }) {
   return (
     <span style={{
       fontSize: "10px", fontWeight: 700, letterSpacing: "0.08em",
-      textTransform: "uppercase", padding: "2px 8px", borderRadius: "99px",
+      textTransform: "uppercase" as const, padding: "2px 8px", borderRadius: "99px",
       color: s.color, background: s.bg, border: `1px solid ${s.color}33`,
     }}>
       {s.label}
@@ -99,14 +106,14 @@ function formatDueDate(date: string | Date | null) {
   const now = new Date();
   const diffDays = Math.ceil((d.getTime() - now.setHours(0,0,0,0)) / (1000*60*60*24));
   const formatted = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  if (diffDays < 0) return { text: `Overdue · ${formatted}`, status: 'overdue', color: '#DC2626' };
-  if (diffDays === 0) return { text: `Due today · ${formatted}`, status: 'today', color: '#C9A96E' };
-  if (diffDays === 1) return { text: `Due tomorrow · ${formatted}`, status: 'today', color: '#C9A96E' };
-  return { text: `Due ${formatted}`, status: 'normal', color: '#6B7280' };
+  if (diffDays < 0) return { text: `Overdue · ${formatted}`, color: "#DC2626" };
+  if (diffDays === 0) return { text: `Due today · ${formatted}`, color: "#C9A96E" };
+  if (diffDays === 1) return { text: `Due tomorrow · ${formatted}`, color: "#C9A96E" };
+  return { text: `Due ${formatted}`, color: "#6B7280" };
 }
 
 export default function Home() {
-  const { todos, filter, totalCount, activeCount, completedCount } =
+  const { todos, filter, totalCount, activeCount, completedCount, user } =
     useLoaderData<typeof loader>();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showFullForm, setShowFullForm] = useState(false);
@@ -204,6 +211,44 @@ export default function Home() {
           padding: 38px 44px 32px;
         }
 
+        .banner-top {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          margin-bottom: 16px;
+        }
+
+        .user-info {
+          display: flex;
+          flex-direction: column;
+          align-items: flex-end;
+          gap: 6px;
+        }
+
+        .user-email {
+          font-size: 11px;
+          font-weight: 500;
+          color: #555;
+          letter-spacing: 0.04em;
+        }
+
+        .logout-btn {
+          background: transparent;
+          border: 1px solid #333;
+          border-radius: 8px;
+          padding: 5px 12px;
+          font-family: 'DM Sans', sans-serif;
+          font-size: 11px;
+          font-weight: 600;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          color: #555;
+          cursor: pointer;
+          transition: border-color 0.2s, color 0.2s;
+        }
+
+        .logout-btn:hover { border-color: #555; color: #888; }
+
         .banner-label {
           font-size: 10px; font-weight: 600; letter-spacing: 0.22em;
           text-transform: uppercase; color: var(--text-banner-muted); margin-bottom: 8px;
@@ -234,9 +279,7 @@ export default function Home() {
           white-space: nowrap; letter-spacing: 0.04em;
         }
 
-        .stats {
-          display: flex; border-bottom: 1px solid var(--stat-divider);
-        }
+        .stats { display: flex; border-bottom: 1px solid var(--stat-divider); }
 
         .stat {
           flex: 1; padding: 20px 0; text-align: center;
@@ -257,15 +300,12 @@ export default function Home() {
 
         .body { padding: 32px 44px 40px; }
 
-        /* ── ADD FORM ── */
-        .add-row {
-          display: flex; gap: 10px; margin-bottom: 8px;
-        }
+        .add-row { display: flex; gap: 10px; margin-bottom: 8px; }
 
         .add-input {
           flex: 1; border: 1.5px solid var(--border); border-radius: 12px;
           padding: 13px 17px; font-family: 'DM Sans', sans-serif;
-          font-size: 14px; font-weight: 400; color: var(--text-primary);
+          font-size: 14px; color: var(--text-primary);
           background: var(--bg-input); outline: none;
           transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
         }
@@ -282,8 +322,7 @@ export default function Home() {
           background: var(--btn-bg); color: var(--bg-card);
           border: none; border-radius: 12px; padding: 13px 24px;
           font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 700;
-          cursor: pointer; letter-spacing: 0.02em;
-          transition: background 0.2s, transform 0.1s; white-space: nowrap;
+          cursor: pointer; transition: background 0.2s, transform 0.1s; white-space: nowrap;
         }
 
         .add-btn:hover { background: var(--btn-hover); }
@@ -292,15 +331,13 @@ export default function Home() {
         .expand-btn {
           background: none; border: none; font-family: 'DM Sans', sans-serif;
           font-size: 12px; font-weight: 500; color: var(--text-muted);
-          cursor: pointer; padding: 4px 2px; margin-bottom: 20px;
-          transition: color 0.15s;
+          cursor: pointer; padding: 4px 2px; margin-bottom: 20px; transition: color 0.15s;
         }
 
         .expand-btn:hover { color: var(--text-primary); }
 
         .extra-fields {
-          display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
-          margin-bottom: 16px;
+          display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px;
         }
 
         .field-label {
@@ -322,7 +359,6 @@ export default function Home() {
           box-shadow: 0 0 0 3px var(--gold-glow);
         }
 
-        /* ── FILTERS ── */
         .filters {
           display: flex; gap: 4px; background: var(--bg-filter);
           border-radius: 12px; padding: 4px; margin-bottom: 24px;
@@ -331,7 +367,7 @@ export default function Home() {
         .filter-tab {
           flex: 1; text-align: center; padding: 9px; border-radius: 9px;
           font-size: 13px; font-weight: 500; color: var(--text-muted);
-          text-decoration: none; transition: all 0.2s; letter-spacing: 0.01em;
+          text-decoration: none; transition: all 0.2s;
         }
 
         .filter-tab:hover { color: var(--text-primary); }
@@ -341,10 +377,7 @@ export default function Home() {
           font-weight: 700; box-shadow: var(--filter-active-shadow);
         }
 
-        /* ── LIST ── */
-        .todo-list {
-          list-style: none; display: flex; flex-direction: column; gap: 2px;
-        }
+        .todo-list { list-style: none; display: flex; flex-direction: column; gap: 2px; }
 
         .todo-empty {
           padding: 52px 0; text-align: center;
@@ -352,10 +385,7 @@ export default function Home() {
           font-style: italic; font-size: 16px; color: var(--text-faint);
         }
 
-        .todo-item {
-          border-radius: 12px; padding: 13px 14px; transition: background 0.15s;
-        }
-
+        .todo-item { border-radius: 12px; padding: 13px 14px; transition: background 0.15s; }
         .todo-item:hover { background: var(--bg-item-hover); }
 
         .todo-view { display: flex; align-items: flex-start; gap: 14px; }
@@ -377,9 +407,7 @@ export default function Home() {
 
         .todo-content { flex: 1; min-width: 0; }
 
-        .todo-title-row {
-          display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-        }
+        .todo-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
         .todo-title {
           font-size: 14px; font-weight: 500; color: var(--text-primary); line-height: 1.4;
@@ -389,17 +417,11 @@ export default function Home() {
           text-decoration: line-through; color: var(--text-faint); font-weight: 400;
         }
 
-        .todo-meta {
-          display: flex; align-items: center; gap: 8px; margin-top: 4px; flex-wrap: wrap;
-        }
+        .todo-meta { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
 
-        .todo-date-text {
-          font-size: 11px; font-weight: 500;
-        }
+        .todo-date-text { font-size: 11px; font-weight: 500; }
 
-        .todo-created {
-          font-size: 11px; color: var(--text-faint);
-        }
+        .todo-created { font-size: 11px; color: var(--text-faint); }
 
         .todo-actions {
           display: flex; gap: 2px; opacity: 0; transition: opacity 0.15s; flex-shrink: 0;
@@ -411,8 +433,8 @@ export default function Home() {
           border: none; background: transparent; padding: 5px 10px;
           border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer;
           font-family: 'DM Sans', sans-serif; color: var(--text-muted);
-          transition: background 0.15s, color 0.15s; letter-spacing: 0.01em;
-          text-decoration: none; display: inline-block;
+          transition: background 0.15s, color 0.15s; text-decoration: none;
+          display: inline-block;
         }
 
         .action-btn:hover { background: var(--bg-filter); color: var(--text-primary); }
@@ -460,8 +482,18 @@ export default function Home() {
 
           {/* BANNER */}
           <div className="banner">
-            <p className="banner-label">Today's Focus</p>
-            <h1 className="banner-title">My <em>Tasks</em></h1>
+            <div className="banner-top">
+              <div>
+                <p className="banner-label">Today's Focus</p>
+                <h1 className="banner-title">My <em>Tasks</em></h1>
+              </div>
+              <div className="user-info">
+                <span className="user-email">{user?.name ?? user?.email}</span>
+                <Form method="post" action="/logout">
+                  <button type="submit" className="logout-btn">Sign out</button>
+                </Form>
+              </div>
+            </div>
             <div className="progress-row">
               <div className="progress-track">
                 <div className="progress-fill" style={{ width: `${progressPct}%` }} />
@@ -520,7 +552,7 @@ export default function Home() {
                     </select>
                   </div>
                   <div>
-                    <label htmlFor="dueDate" className="field-label">Due&nbsp;Date</label>
+                    <label htmlFor="dueDate" className="field-label">Due Date</label>
                     <input id="dueDate" type="date" name="dueDate" className="field-date" />
                   </div>
                 </div>
@@ -546,7 +578,7 @@ export default function Home() {
                 <li className="todo-empty">Nothing here yet.</li>
               ) : (
                 todos.map((todo) => {
-                  const due = formatDueDate((todo as any).dueDate);
+                  const due = formatDueDate(todo.dueDate);
                   return (
                     <li key={todo.id} className="todo-item">
                       {editingId === todo.id ? (
@@ -557,15 +589,12 @@ export default function Home() {
                         >
                           <input type="hidden" name="intent" value="edit" />
                           <input type="hidden" name="id" value={todo.id} />
-                          <label htmlFor={`title-${todo.id}`} className="sr-only">Edit task title</label>
                           <input
-                            id={`title-${todo.id}`}
                             name="title"
                             defaultValue={todo.title}
+                            placeholder="Edit task title"
                             autoFocus
                             className="edit-input"
-                            placeholder="Task title"
-                            title="Enter task title"
                           />
                           <button type="submit" className="save-btn">Save</button>
                           <button
@@ -595,8 +624,7 @@ export default function Home() {
                               <span className={`todo-title${todo.done ? " done" : ""}`}>
                                 {todo.title}
                               </span>
-                              {/* some todos may not have a priority field (older items) */}
-                              <PriorityBadge priority={(todo as any).priority ?? 'low'} />
+                              <PriorityBadge priority={todo.priority} />
                             </div>
                             <div className="todo-meta">
                               {due && (
