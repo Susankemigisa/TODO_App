@@ -112,9 +112,15 @@ function PriorityBadge({ priority }: { priority: string }) {
 
 function formatDueDate(date: string | Date | null) {
   if (!date) return null;
-  const d = new Date(date);
+  // Parse the date as local date (not UTC) to avoid timezone shift
+  const raw = typeof date === "string" ? date : date.toISOString();
+  const [year, month, day] = raw.split("T")[0].split("-").map(Number);
+  const d = new Date(year, month - 1, day); // local midnight
+
   const now = new Date();
-  const diffDays = Math.ceil((d.getTime() - now.setHours(0,0,0,0)) / (1000*60*60*24));
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diffDays = Math.round((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
   const formatted = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   if (diffDays < 0) return { text: `Overdue · ${formatted}`, color: "#DC2626" };
   if (diffDays === 0) return { text: `Due today · ${formatted}`, color: "#C9A96E" };
@@ -124,8 +130,9 @@ function formatDueDate(date: string | Date | null) {
 
 function isFutureDueDate(date: string | Date | null) {
   if (!date) return false;
-  const due = new Date(date);
-  due.setHours(0, 0, 0, 0);
+  const raw = typeof date === "string" ? date : date.toISOString();
+  const [year, month, day] = raw.split("T")[0].split("-").map(Number);
+  const due = new Date(year, month - 1, day);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   return due.getTime() > today.getTime();
@@ -250,7 +257,7 @@ export default function Home() {
         .user-email {
           font-size: 11px;
           font-weight: 500;
-          color: #555;
+          color: #b3b3b3;
           letter-spacing: 0.04em;
         }
 
@@ -587,11 +594,21 @@ export default function Home() {
               </div>
               <div className="user-info">
                 <span className="user-email">{user?.name ?? user?.email}</span>
-                <Form method="post" action="/logout">
-                  <button type="submit" className="logout-btn">Sign out</button>
-                </Form>
+                <div style={{ display: "flex", gap: "6px" }}>
+                  <a href="/settings" title="Settings" style={{
+                    background: "transparent", border: "1px solid #333", borderRadius: "8px",
+                    padding: "5px 8px", display: "inline-flex", alignItems: "center",
+                    justifyContent: "center", color: "#b3b3b3", textDecoration: "none",
+                    transition: "color 0.2s, border-color 0.2s",
+                  }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="3"/>
+                      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                    </svg>
+                  </a>
+                </div>
               </div>
-            </div>
+              </div>
             <div className="progress-row">
               <div className="progress-track">
                 <div className="progress-fill" style={{ width: `${progressPct}%` }} />

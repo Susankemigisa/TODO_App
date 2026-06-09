@@ -29,6 +29,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
     <html lang="en">
       <head>
         <meta charSet="utf-8" />
+        <meta
+          httpEquiv="Content-Security-Policy"
+          content="img-src 'self' data: https://*.googleusercontent.com https://*.google.com https://*.googleapis.com;"
+        />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <Meta />
         <Links />
