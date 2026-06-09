@@ -301,7 +301,7 @@ export default function Login() {
                 <line x1="72" y1="40" x2="40" y2="4" stroke="#C9A96E" strokeWidth="0.8" opacity="0.2"/>
                 <polygon points="40,18 58,40 40,62 22,40" fill="#C9A96E" opacity="0.12"/>
               </svg>
-              <span style={{ fontFamily: "'DM Serif Display', serif", fontSize: "22px", color: "#fff", fontStyle: "italic", color: "#C9A96E" }}>Tasks</span>
+              <span style={{ fontFamily: "'DM Serif Display', serif", fontSize: "22px", fontStyle: "italic", color: "#C9A96E" }}>Tasks</span>
             </div>
             <p className="banner-label">Welcome Back</p>
             <h1 className="banner-title">Sign <em>In</em></h1>

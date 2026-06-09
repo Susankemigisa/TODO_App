@@ -1,8 +1,9 @@
-﻿import { Form, useActionData, useLoaderData } from "react-router";
-import { useState } from "react";
+﻿import { Form, useActionData, useLoaderData, useNavigate, useSubmit } from "react-router";
+import { useState, useRef, useEffect } from "react";
 import { db } from "../db.server";
 import { requireUserId, getUser } from "../session.server";
 import type { Route } from "./+types/home";
+
 
 export async function loader({ request }: Route.LoaderArgs) {
   const userId = await requireUserId(request);
@@ -10,6 +11,8 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const url = new URL(request.url);
   const filter = url.searchParams.get("filter") ?? "all";
+  const search = url.searchParams.get("search") ?? "";
+  const showAll = url.searchParams.get("showAll") === "true";
 
   const baseWhere = { userId };
   const where =
@@ -19,17 +22,55 @@ export async function loader({ request }: Route.LoaderArgs) {
       ? { ...baseWhere, done: true }
       : baseWhere;
 
-  const todos = await db.todo.findMany({
-    where,
+  const allTodos = await db.todo.findMany({
+    where: search
+      ? { ...where, title: { contains: search, mode: "insensitive" as const } }
+      : where,
     orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
+    include: ({ subtasks: { orderBy: { order: "asc" } }, tags: { include: { tag: true } } } as any),
   });
+
+  // Group by date
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const weekAgo = new Date(today);
+  weekAgo.setDate(weekAgo.getDate() - 7);
+
+  type Group = { label: string; todos: typeof allTodos };
+  const groups: Group[] = [];
+  const todayTodos = allTodos.filter(t => {
+    const d = new Date(t.createdAt); d.setHours(0,0,0,0);
+    return d.getTime() === today.getTime();
+  });
+  const yesterdayTodos = allTodos.filter(t => {
+    const d = new Date(t.createdAt); d.setHours(0,0,0,0);
+    return d.getTime() === yesterday.getTime();
+  });
+  const thisWeekTodos = allTodos.filter(t => {
+    const d = new Date(t.createdAt); d.setHours(0,0,0,0);
+    return d.getTime() < yesterday.getTime() && d.getTime() >= weekAgo.getTime();
+  });
+  const olderTodos = allTodos.filter(t => {
+    const d = new Date(t.createdAt); d.setHours(0,0,0,0);
+    return d.getTime() < weekAgo.getTime();
+  });
+
+  if (todayTodos.length) groups.push({ label: "Today", todos: todayTodos });
+  if (yesterdayTodos.length) groups.push({ label: "Yesterday", todos: yesterdayTodos });
+  if (thisWeekTodos.length) groups.push({ label: "This Week", todos: thisWeekTodos });
+
+  const hasOlder = olderTodos.length > 0;
+  if (showAll && olderTodos.length) groups.push({ label: "Older", todos: olderTodos });
 
   const totalCount = await db.todo.count({ where: baseWhere });
   const activeCount = await db.todo.count({ where: { ...baseWhere, done: false } });
   const completedCount = await db.todo.count({ where: { ...baseWhere, done: true } });
 
-  return { todos, filter, totalCount, activeCount, completedCount, user };
+  return { groups, filter, search, showAll, hasOlder, totalCount, activeCount, completedCount, user };
 }
+
 
 export async function action({ request }: Route.ActionArgs) {
   const userId = await requireUserId(request);
@@ -40,12 +81,22 @@ export async function action({ request }: Route.ActionArgs) {
     const title = formData.get("title") as string;
     const priority = (formData.get("priority") as string) || "MEDIUM";
     const dueDateRaw = formData.get("dueDate") as string;
+    const notes = formData.get("notes") as string;
+    const recurrence = (formData.get("recurrence") as string) || "NONE";
     if (!title || title.trim() === "") return { error: "Title cannot be empty" };
+
+    const existing = await db.todo.findFirst({
+      where: { userId, done: false, title: { equals: title.trim(), mode: "insensitive" } },
+    });
+    if (existing) return { error: `You already have a task called "${title.trim()}"` };
+
     await db.todo.create({
       data: {
         title: title.trim(),
         priority: priority as "LOW" | "MEDIUM" | "HIGH",
         dueDate: dueDateRaw ? new Date(dueDateRaw) : null,
+        notes: notes?.trim() || null,
+        recurrence: recurrence as "NONE" | "DAILY" | "WEEKLY" | "MONTHLY",
         user: { connect: { id: userId } },
       },
     });
@@ -79,6 +130,25 @@ export async function action({ request }: Route.ActionArgs) {
     await db.todo.updateMany({ where: { id, userId }, data: { title: title.trim() } });
   }
 
+  if (intent === "add-subtask") {
+    const todoId = formData.get("todoId") as string;
+    const title = formData.get("subtaskTitle") as string;
+    if (title?.trim()) {
+      await db.subtask.create({ data: { title: title.trim(), todoId } });
+    }
+  }
+
+  if (intent === "toggle-subtask") {
+    const id = formData.get("id") as string;
+    const done = formData.get("done") === "true";
+    await db.subtask.update({ where: { id }, data: { done: !done } });
+  }
+
+  if (intent === "delete-subtask") {
+    const id = formData.get("id") as string;
+    await db.subtask.delete({ where: { id } });
+  }
+
   return null;
 }
 
@@ -110,18 +180,27 @@ function PriorityBadge({ priority }: { priority: string }) {
   );
 }
 
-function formatDueDate(date: string | Date | null) {
+function formatDueDate(date: string | Date | null, recurrence?: string) {
   if (!date) return null;
-  // Parse the date as local date (not UTC) to avoid timezone shift
   const raw = typeof date === "string" ? date : date.toISOString();
   const [year, month, day] = raw.split("T")[0].split("-").map(Number);
-  const d = new Date(year, month - 1, day); // local midnight
+  const d = new Date(year, month - 1, day);
 
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const diffDays = Math.round((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 
   const formatted = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+
+  // For recurring tasks with future due dates, use "Starts" language
+  const isRecurring = recurrence && recurrence !== "NONE";
+  if (isRecurring && diffDays > 0) {
+    if (diffDays === 1) return { text: `Starts tomorrow · ${formatted}`, color: "#C9A96E" };
+    if (recurrence === "WEEKLY" && diffDays <= 7) return { text: `Starts next week · ${formatted}`, color: "#C9A96E" };
+    if (recurrence === "MONTHLY" && diffDays <= 31) return { text: `Starts next month · ${formatted}`, color: "#C9A96E" };
+    return { text: `Starts ${formatted}`, color: "#6B7280" };
+  }
+
   if (diffDays < 0) return { text: `Overdue · ${formatted}`, color: "#DC2626" };
   if (diffDays === 0) return { text: `Due today · ${formatted}`, color: "#C9A96E" };
   if (diffDays === 1) return { text: `Due tomorrow · ${formatted}`, color: "#C9A96E" };
@@ -138,14 +217,39 @@ function isFutureDueDate(date: string | Date | null) {
   return due.getTime() > today.getTime();
 }
 
+const VISIBLE_COUNT = 5;
+// Total tasks shown across ALL groups before "See more"
+const GLOBAL_VISIBLE = 5;
+
 export default function Home() {
   const actionData = useActionData<{ error?: string }>();
-  const { todos, filter, totalCount, activeCount, completedCount, user } =
-    useLoaderData<typeof loader>();
+  const { groups, filter, search, showAll, hasOlder, totalCount, activeCount, completedCount, user } =
+  useLoaderData<typeof loader>();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showFullForm, setShowFullForm] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const todos = groups.flatMap(group => group.todos);
   const selectedDeleteTodo = deleteConfirmId ? todos.find((todo) => todo.id === deleteConfirmId) : undefined;
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  // Universal "See more"
+  const [showMoreTasks, setShowMoreTasks] = useState(false);
+
+  // Live search
+  const submit = useSubmit();
+  const searchRef = useRef<HTMLInputElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function handleSearchChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const value = e.target.value;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      const params = new URLSearchParams();
+      if (value) params.set("search", value);
+      if (filter !== "all") params.set("filter", filter);
+      submit(params, { method: "get", action: "/" });
+    }, 300);
+  }
 
   const progressPct =
     totalCount === 0 ? 0 : Math.round((completedCount / totalCount) * 100);
@@ -329,14 +433,13 @@ export default function Home() {
 
         .body { padding: 32px 44px 40px; }
 
-        .add-row { display: flex; gap: 10px; margin-bottom: 8px; }
-
         .add-input {
-          flex: 1; border: 1.5px solid var(--border); border-radius: 12px;
+          width: 100%; border: 1.5px solid var(--border); border-radius: 12px;
           padding: 13px 17px; font-family: 'DM Sans', sans-serif;
           font-size: 14px; color: var(--text-primary);
           background: var(--bg-input); outline: none;
           transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+          margin-bottom: 0;
         }
 
         .add-input::placeholder { color: var(--text-faint); }
@@ -348,10 +451,12 @@ export default function Home() {
         }
 
         .add-btn {
+          width: 100%;
           background: var(--btn-bg); color: var(--bg-card);
           border: none; border-radius: 12px; padding: 13px 24px;
           font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 700;
-          cursor: pointer; transition: background 0.2s, transform 0.1s; white-space: nowrap;
+          cursor: pointer; transition: background 0.2s, transform 0.1s;
+          margin-top: 12px;
         }
 
         .add-btn:hover { background: var(--btn-hover); }
@@ -360,7 +465,8 @@ export default function Home() {
         .expand-btn {
           background: none; border: none; font-family: 'DM Sans', sans-serif;
           font-size: 12px; font-weight: 500; color: var(--text-muted);
-          cursor: pointer; padding: 4px 2px; margin-bottom: 20px; transition: color 0.15s;
+          cursor: pointer; padding: 4px 2px; margin: 8px 0 4px; transition: color 0.15s;
+          display: block;
         }
 
         .expand-btn:hover { color: var(--text-primary); }
@@ -387,6 +493,31 @@ export default function Home() {
           border-color: var(--border-focus);
           box-shadow: 0 0 0 3px var(--gold-glow);
         }
+
+        .search-row { margin-bottom: 16px; position: relative; }
+
+        .search-input {
+          width: 100%; border: 1.5px solid var(--border); border-radius: 12px;
+          padding: 10px 40px 10px 14px; font-family: 'DM Sans', sans-serif;
+          font-size: 13px; color: var(--text-primary);
+          background: var(--bg-input); outline: none;
+          transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .search-input:focus {
+          border-color: var(--border-focus);
+          box-shadow: 0 0 0 3px var(--gold-glow);
+          background: var(--bg-card);
+        }
+
+        .search-clear {
+          position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+          background: none; border: none; cursor: pointer; color: var(--text-muted);
+          font-size: 16px; padding: 4px; line-height: 1;
+          transition: color 0.15s;
+        }
+
+        .search-clear:hover { color: var(--text-primary); }
 
         .filters {
           display: flex; gap: 4px; background: var(--bg-filter);
@@ -446,7 +577,7 @@ export default function Home() {
           text-decoration: line-through; color: var(--text-faint); font-weight: 400;
         }
 
-        .todo-meta { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+        .todo-meta { display: flex; align-items: center; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
 
         .todo-date-text { font-size: 11px; font-weight: 500; }
 
@@ -563,6 +694,15 @@ export default function Home() {
 
         .cancel-btn:hover { background: var(--bg-filter); }
 
+        .see-more-btn {
+          width: 100%; background: none; border: 1px dashed var(--border);
+          border-radius: 10px; padding: 9px; margin-top: 6px;
+          font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 600;
+          color: var(--text-muted); cursor: pointer; transition: background 0.15s, color 0.15s;
+        }
+
+        .see-more-btn:hover { background: var(--bg-filter); color: var(--text-primary); }
+
         .page-footer {
           margin-top: 32px; margin-bottom: 48px; text-align: center;
           font-size: 11px; font-weight: 600; letter-spacing: 0.18em;
@@ -637,19 +777,25 @@ export default function Home() {
               <div className="form-error">{actionData.error}</div>
             ) : null}
 
-            {/* ADD FORM */}
-            <Form method="post" onSubmit={(e) => {
+            {/* ADD FORM — input first, options toggle, Add button at bottom */}
+            <Form method="post" style={{ marginBottom: "20px" }} onSubmit={(e) => {
               setTimeout(() => (e.target as HTMLFormElement).reset(), 0);
             }}>
               <input type="hidden" name="intent" value="create" />
-              <div className="add-row">
-                <input
-                  name="title"
-                  placeholder="Add a new task…"
-                  className="add-input"
-                />
-                <button type="submit" className="add-btn">Add</button>
-              </div>
+              <input
+                id="title"
+                name="title"
+                aria-label="Add task title"
+                placeholder="Add a new task…"
+                className="add-input"
+                autoCapitalize="sentences"
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val.length === 1 && val[0] !== val[0].toUpperCase()) {
+                    e.target.value = val[0].toUpperCase() + val.slice(1);
+                  }
+                }}
+              />
 
               <button
                 type="button"
@@ -660,22 +806,66 @@ export default function Home() {
               </button>
 
               {showFullForm && (
-                <div className="extra-fields">
-                  <div>
-                    <label htmlFor="priority" className="field-label">Priority</label>
-                    <select id="priority" name="priority" className="field-select" defaultValue="MEDIUM">
-                      <option value="LOW">Low</option>
-                      <option value="MEDIUM">Medium</option>
-                      <option value="HIGH">High</option>
-                    </select>
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "12px" }}>
+                  <div className="extra-fields">
+                    <div>
+                      <label className="field-label" htmlFor="priority">Priority</label>
+                      <select id="priority" name="priority" className="field-select" defaultValue="MEDIUM">
+                        <option value="LOW">Low</option>
+                        <option value="MEDIUM">Medium</option>
+                        <option value="HIGH">High</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="field-label" htmlFor="dueDate">Due Date</label>
+                      <input id="dueDate" type="date" name="dueDate" className="field-date" />
+                    </div>
                   </div>
-                  <div>
-                    <label htmlFor="dueDate" className="field-label">Due Date</label>
-                    <input id="dueDate" type="date" name="dueDate" className="field-date" />
+                  <div className="extra-fields">
+                    <div>
+                      <label className="field-label" htmlFor="recurrence">Repeat</label>
+                      <select id="recurrence" name="recurrence" className="field-select" defaultValue="NONE">
+                        <option value="NONE">No repeat</option>
+                        <option value="DAILY">Daily</option>
+                        <option value="WEEKLY">Weekly</option>
+                        <option value="MONTHLY">Monthly</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="field-label" htmlFor="notes">Notes</label>
+                      <input id="notes" name="notes" className="field-date" placeholder="Optional notes…" />
+                    </div>
                   </div>
                 </div>
               )}
+
+              <button type="submit" className="add-btn">+ Add Task</button>
             </Form>
+
+            {/* LIVE SEARCH */}
+            <div className="search-row">
+              <input
+                ref={searchRef}
+                id="search"
+                defaultValue={search}
+                aria-label="Search tasks"
+                placeholder="Search tasks…"
+                className="search-input"
+                onChange={handleSearchChange}
+              />
+              {search && (
+                <button
+                  type="button"
+                  className="search-clear"
+                  onClick={() => {
+                    if (searchRef.current) searchRef.current.value = "";
+                    submit(filter !== "all" ? new URLSearchParams({ filter }) : new URLSearchParams(), { method: "get", action: "/" });
+                  }}
+                >
+                  ×
+                </button>
+              )}
+            </div>
 
             {/* FILTERS */}
             <div className="filters">
@@ -690,98 +880,209 @@ export default function Home() {
               ))}
             </div>
 
-            {/* LIST */}
-            <ul className="todo-list">
-              {todos.length === 0 ? (
-                <li className="todo-empty">Nothing here yet.</li>
-              ) : (
-                todos.map((todo) => {
-                  const due = formatDueDate(todo.dueDate);
-                  return (
-                    <li key={todo.id} className="todo-item">
-                      {editingId === todo.id ? (
-                        <Form
-                          method="post"
-                          className="edit-form"
-                          onSubmit={() => setEditingId(null)}
-                        >
-                          <input type="hidden" name="intent" value="edit" />
-                          <input type="hidden" name="id" value={todo.id} />
-                          <input
-                            name="title"
-                            defaultValue={todo.title}
-                            placeholder="Edit task title"
-                            autoFocus
-                            className="edit-input"
-                          />
-                          <button type="submit" className="save-btn">Save</button>
-                          <button
-                            type="button"
-                            className="cancel-btn"
-                            onClick={() => setEditingId(null)}
-                          >
-                            Cancel
-                          </button>
-                        </Form>
-                      ) : (
-                        <div className="todo-view">
-                          <Form method="post">
-                            <input type="hidden" name="intent" value="toggle" />
-                            <input type="hidden" name="id" value={todo.id} />
-                            <input type="hidden" name="done" value={String(todo.done)} />
-                            <button
-                              type="submit"
-                              className={`toggle-btn${todo.done ? " done" : ""}${isFutureDueDate(todo.dueDate) && !todo.done ? " disabled" : ""}`}
-                              disabled={isFutureDueDate(todo.dueDate) && !todo.done}
-                              title={isFutureDueDate(todo.dueDate) && !todo.done ? "Cannot complete before due date" : undefined}
-                            >
-                              ✓
-                            </button>
-                          </Form>
+            {/* GROUPED LIST */}
+            {(() => {
+              const totalTodos = todos.length;
+              const hiddenCount = totalTodos - GLOBAL_VISIBLE;
+              let shownSoFar = 0;
 
-                          <div className="todo-content">
-                            <div className="todo-title-row">
-                              <span className={`todo-title${todo.done ? " done" : ""}`}>
-                                {todo.title}
-                              </span>
-                              <PriorityBadge priority={todo.priority} />
-                            </div>
-                            <div className="todo-meta">
-                              {due && (
-                                <span className="todo-date-text" style={{ color: due.color }}>
-                                  {due.text}
-                                </span>
-                              )}
-                              <span className="todo-created">
-                                Added {new Date(todo.createdAt).toLocaleDateString("en-US", {
-                                  month: "short", day: "numeric",
-                                })}
-                              </span>
-                            </div>
-                          </div>
+              const groupsWithVisibleTodos = groups.map((group) => {
+                const groupTodos = showMoreTasks
+                  ? group.todos
+                  : group.todos.filter(() => {
+                      if (shownSoFar >= GLOBAL_VISIBLE) return false;
+                      shownSoFar++;
+                      return true;
+                    });
+                return { ...group, visibleTodos: groupTodos };
+              });
 
-                          <div className="todo-actions">
-                            <a
-                              href={`/todos/${todo.id}/edit`}
-                              className="action-btn"
-                            >
-                              Edit
-                            </a>
-                            <button
-                              type="button"
-                              className="action-btn delete"
-                              onClick={() => setDeleteConfirmId(todo.id)}
-                            >
-                              Delete
-                            </button>
+              return groups.length === 0 ? (
+              <p className="todo-empty">
+                {search ? `No tasks matching "${search}"` : "Nothing here yet."}
+              </p>
+            ) : (
+                  <>
+                    {groupsWithVisibleTodos.map((group) => {
+                      const groupTodos = group.visibleTodos;
+                      if (groupTodos.length === 0) return null;
+
+                      return (
+                        <div key={group.label}>
+                          <div style={{
+                            fontSize: "10px", fontWeight: 700, letterSpacing: "0.15em",
+                            textTransform: "uppercase", color: "var(--text-muted)",
+                            padding: "8px 14px 6px", marginTop: "8px",
+                          }}>
+                            {group.label}
                           </div>
+                          <ul className="todo-list">
+                            {groupTodos.map((todo) => {
+                        const due = formatDueDate(todo.dueDate, todo.recurrence);
+                        const subtasks = Array.isArray(todo.subtasks)
+                          ? (todo.subtasks as Array<{ id: string; title: string; done: boolean }>)
+                          : [];
+                        return (
+                          <li key={todo.id} className="todo-item">
+                            {editingId === todo.id ? (
+                              <Form method="post" className="edit-form" onSubmit={() => setEditingId(null)}>
+                                <input type="hidden" name="intent" value="edit" />
+                                <input type="hidden" name="id" value={todo.id} />
+                                <input
+                                  name="title"
+                                  defaultValue={todo.title}
+                                  autoFocus
+                                  aria-label="Edit task title"
+                                  className="edit-input"
+                                />
+                                <button type="submit" className="save-btn">Save</button>
+                                <button type="button" className="cancel-btn" onClick={() => setEditingId(null)}>Cancel</button>
+                              </Form>
+                            ) : (
+                              <div>
+                                <div className="todo-view">
+                                  <Form method="post">
+                                    <input type="hidden" name="intent" value="toggle" />
+                                    <input type="hidden" name="id" value={todo.id} />
+                                    <input type="hidden" name="done" value={String(todo.done)} />
+                                    <button
+                                      type="submit"
+                                      className={`toggle-btn${todo.done ? " done" : ""}${isFutureDueDate(todo.dueDate) && !todo.done ? " disabled" : ""}`}
+                                      disabled={isFutureDueDate(todo.dueDate) && !todo.done}
+                                      aria-label={todo.done ? "Mark task incomplete" : "Mark task complete"}
+                                    >✓</button>
+                                  </Form>
+
+                                  <div className="todo-content">
+                                    <div className="todo-title-row">
+                                      <span className={`todo-title${todo.done ? " done" : ""}`}>{todo.title}</span>
+                                      <PriorityBadge priority={todo.priority} />
+                                      {todo.recurrence !== "NONE" && (
+                                        <span style={{ fontSize: "10px", color: "var(--gold)", fontWeight: 600 }}>
+                                          🔁 {String(todo.recurrence).toLowerCase()}
+                                        </span>
+                                      )}
+                                    </div>
+                                    {todo.notes && (
+                                      <p style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "3px" }}>
+                                        {todo.notes}
+                                      </p>
+                                    )}
+                                    <div className="todo-meta">
+                                      {todo.done
+                                        ? <span className="todo-date-text" style={{ color: "#6B7280" }}>✓ Completed</span>
+                                        : due && <span className="todo-date-text" style={{ color: due.color }}>{due.text}</span>
+                                      }
+                                      <span className="todo-created">Added {new Date(todo.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+                                      {subtasks.length > 0 && (
+                                        <span style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                                          {subtasks.filter(s => s.done).length}/{subtasks.length} subtasks
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <div className="todo-actions">
+                                    <button type="button" className="action-btn" onClick={() => setExpandedId(expandedId === todo.id ? null : todo.id)}>
+                                      {expandedId === todo.id ? "▲" : "▼"}
+                                    </button>
+                                    <a href={`/todos/${todo.id}/edit`} className="action-btn">Edit</a>
+                                    <button type="button" className="action-btn delete" onClick={() => setDeleteConfirmId(todo.id)}>Delete</button>
+                                  </div>
+                                </div>
+
+                                {/* SUBTASKS */}
+                                {expandedId === todo.id && (
+                                  <div style={{ marginLeft: "36px", marginTop: "8px", paddingBottom: "8px" }}>
+                                    {subtasks.map((sub) => (
+                                      <div key={sub.id} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "4px 0" }}>
+                                        <Form method="post">
+                                          <input type="hidden" name="intent" value="toggle-subtask" />
+                                          <input type="hidden" name="id" value={sub.id} />
+                                          <input type="hidden" name="done" value={String(sub.done)} />
+                                          <button
+                                            type="submit"
+                                            className={`toggle-btn${sub.done ? " done" : ""}`}
+                                            style={{ width: "16px", height: "16px", fontSize: "9px" }}
+                                            aria-label={sub.done ? "Mark subtask incomplete" : "Mark subtask complete"}
+                                          >✓</button>
+                                        </Form>
+                                        <span style={{ fontSize: "13px", color: sub.done ? "var(--text-faint)" : "var(--text-primary)", textDecoration: sub.done ? "line-through" : "none", flex: 1 }}>
+                                          {sub.title}
+                                        </span>
+                                        <Form method="post">
+                                          <input type="hidden" name="intent" value="delete-subtask" />
+                                          <input type="hidden" name="id" value={sub.id} />
+                                          <button
+                                            type="submit"
+                                            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-faint)", fontSize: "12px" }}
+                                            aria-label="Delete subtask"
+                                          >×</button>
+                                        </Form>
+                                      </div>
+                                    ))}
+                                    <Form method="post" style={{ display: "flex", gap: "6px", marginTop: "6px" }}>
+                                      <input type="hidden" name="intent" value="add-subtask" />
+                                      <input type="hidden" name="todoId" value={todo.id} />
+                                      <input
+                                        id={`subtask-${todo.id}`}
+                                        name="subtaskTitle"
+                                        aria-label="Add subtask title"
+                                        placeholder="Add subtask…"
+                                        className="edit-input"
+                                        style={{ fontSize: "12px", padding: "6px 10px" }}
+                                      />
+                                      <button type="submit" className="save-btn" style={{ fontSize: "12px", padding: "6px 12px" }}>Add</button>
+                                    </Form>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </li>
+                        );
+                      })}
+                          </ul>
                         </div>
-                      )}
-                    </li>
-                  );
-                })
-              )}
-            </ul>
+                      );
+                    })}
+
+                    {/* UNIVERSAL SEE MORE */}
+                    {!showMoreTasks && hiddenCount > 0 && (
+                      <button
+                        type="button"
+                        className="see-more-btn"
+                        onClick={() => setShowMoreTasks(true)}
+                      >
+                        ▼ See {hiddenCount} more task{hiddenCount !== 1 ? "s" : ""}
+                      </button>
+                    )}
+                    {showMoreTasks && totalTodos > GLOBAL_VISIBLE && (
+                      <button
+                        type="button"
+                        className="see-more-btn"
+                        onClick={() => setShowMoreTasks(false)}
+                      >
+                        ▲ Show less
+                      </button>
+                    )}
+                  </>
+              );
+            })()}
+
+            {/* SHOW ALL OLDER BUTTON */}
+            {hasOlder && !showAll && (
+              <a
+                href={`?${new URLSearchParams({ filter, search, showAll: "true" }).toString()}`}
+                style={{
+                  display: "block", textAlign: "center", marginTop: "16px",
+                  padding: "10px", borderRadius: "10px", border: "1px dashed var(--border)",
+                  fontSize: "13px", color: "var(--text-muted)", textDecoration: "none",
+                  transition: "background 0.15s",
+                }}
+              >
+                Show older tasks
+              </a>
+            )}
           </div>
         </div>
 
@@ -798,7 +1099,7 @@ export default function Home() {
               This action cannot be undone.
             </p>
             <div className="modal-actions">
-              <Form method="post">
+              <Form method="post" onSubmit={() => setDeleteConfirmId(null)}>
                 <input type="hidden" name="intent" value="delete" />
                 <input type="hidden" name="id" value={deleteConfirmId} />
                 <button type="submit" className="confirm-btn">Yes, delete</button>
