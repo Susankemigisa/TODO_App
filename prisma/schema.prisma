@@ -30,6 +30,7 @@ model User {
   createdAt DateTime @default(now())
   todos     Todo[]
   tags      Tag[]
+  passwordResets PasswordReset[]
 }
 
 model Tag {
@@ -75,4 +76,14 @@ model TodoTag {
   todo   Todo @relation(fields: [todoId], references: [id], onDelete: Cascade)
   tag    Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
   @@id([todoId, tagId])
+}
+
+model PasswordReset {
+  id        String   @id @default(uuid())
+  userId    String
+  code      String
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
 }

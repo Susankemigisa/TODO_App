@@ -329,6 +329,9 @@ export default function Login() {
                 <div>
                   <label className="field-label" htmlFor="password">Password</label>
                   <PasswordInput id="password" name="password" placeholder="Your password" />
+                  <a href="/forgot-password" className="forgot-password-link">
+                    Forgot your password?
+                  </a>
                 </div>
 
                 <button type="submit" className="submit-btn">
