@@ -16,56 +16,14 @@ export async function action({ request }: Route.ActionArgs) {
   const formData = await request.formData();
   const intent = formData.get("intent");
 
-  // ── UPDATE PROFILE ──
   if (intent === "update-profile") {
     const name = (formData.get("name") as string)?.trim();
     const avatar = (formData.get("avatar") as string)?.trim();
-
     if (!name) return { error: "Name cannot be empty", success: null };
-
-    await db.user.update({
-      where: { id: userId },
-      data: {
-        name,
-        avatar: avatar || null,
-      },
-    });
-
+    await db.user.update({ where: { id: userId }, data: { name, avatar: avatar || null } });
     return { success: "Profile updated successfully!", error: null };
   }
 
-  // ── CHANGE PASSWORD ──
-  if (intent === "change-password") {
-    const bcrypt = await import("bcryptjs");
-    const currentPassword = formData.get("currentPassword") as string;
-    const newPassword = formData.get("newPassword") as string;
-    const confirmPassword = formData.get("confirmPassword") as string;
-
-    const user = await db.user.findUnique({ where: { id: userId } });
-
-    // Google users have no password
-    if (!user?.password) {
-      return { error: "Google accounts cannot set a password here.", success: null };
-    }
-
-    const valid = await bcrypt.default.compare(currentPassword, user.password);
-    if (!valid) return { error: "Current password is incorrect.", success: null };
-
-    if (newPassword.length < 6) {
-      return { error: "New password must be at least 6 characters.", success: null };
-    }
-
-    if (newPassword !== confirmPassword) {
-      return { error: "New passwords do not match.", success: null };
-    }
-
-    const hashed = await bcrypt.default.hash(newPassword, 10);
-    await db.user.update({ where: { id: userId }, data: { password: hashed } });
-
-    return { success: "Password changed successfully!", error: null };
-  }
-
-  // ── DELETE ACCOUNT ──
   if (intent === "delete-account") {
     await db.user.delete({ where: { id: userId } });
     return logout(request);
@@ -97,7 +55,6 @@ export default function Settings() {
           --bg-card:      #FFFFFF;
           --bg-banner:    #111111;
           --bg-input:     #F9F7F3;
-          --bg-section:   #FAFAF8;
           --text-primary: #111111;
           --text-muted:   #999999;
           --text-faint:   #CCCCCC;
@@ -116,7 +73,6 @@ export default function Settings() {
             --bg-card:      #1A1A1A;
             --bg-banner:    #000000;
             --bg-input:     #242424;
-            --bg-section:   #1E1E1E;
             --text-primary: #F0EDE7;
             --text-muted:   #999999;
             --text-faint:   #808080;
@@ -130,402 +86,83 @@ export default function Settings() {
           }
         }
 
-        body {
-          background: var(--bg-page);
-          font-family: 'DM Sans', sans-serif;
-          color: var(--text-primary);
-          min-height: 100vh;
-        }
+        body { background: var(--bg-page); font-family: 'DM Sans', sans-serif; color: var(--text-primary); min-height: 100vh; }
 
-        .page {
-          min-height: 100vh;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          padding: 60px 20px 80px;
-        }
+        .page { min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 60px 20px 80px; }
 
-        .card {
-          width: 100%;
-          max-width: 580px;
-          background: var(--bg-card);
-          border-radius: 24px;
-          box-shadow: var(--shadow-card);
-          overflow: hidden;
-          border: 1px solid var(--border);
-        }
+        .card { width: 100%; max-width: 580px; background: var(--bg-card); border-radius: 24px; box-shadow: var(--shadow-card); overflow: hidden; border: 1px solid var(--border); }
 
-        /* ── BANNER ── */
-        .banner {
-          background: var(--bg-banner);
-          padding: 38px 44px 32px;
-        }
+        .banner { background: var(--bg-banner); padding: 38px 44px 32px; }
 
-        .back-link {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          font-size: 12px;
-          font-weight: 600;
-          letter-spacing: 0.08em;
-          text-transform: uppercase;
-          color: #8c8c8c;
-          text-decoration: none;
-          margin-bottom: 20px;
-          transition: color 0.15s;
-        }
-
+        .back-link { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #8c8c8c; text-decoration: none; margin-bottom: 20px; transition: color 0.15s; }
         .back-link:hover { color: #b3b3b3; }
 
-        .banner-label {
-          font-size: 10px; font-weight: 600; letter-spacing: 0.22em;
-          text-transform: uppercase; color: #b3b3b3; margin-bottom: 8px;
-        }
+        .banner-label { font-size: 10px; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; color: #b3b3b3; margin-bottom: 8px; }
 
-        .banner-title {
-          font-family: 'DM Serif Display', serif;
-          font-size: 38px; color: #fff; line-height: 1.05;
-        }
-
+        .banner-title { font-family: 'DM Serif Display', serif; font-size: 38px; color: #fff; line-height: 1.05; }
         .banner-title em { font-style: italic; color: var(--gold); }
 
-        /* ── AVATAR PREVIEW ── */
-        .avatar-row {
-          display: flex;
-          align-items: center;
-          gap: 18px;
-          margin-top: 24px;
-        }
+        .avatar-row { display: flex; align-items: center; gap: 18px; margin-top: 24px; }
 
-        .avatar-img {
-          width: 56px;
-          height: 56px;
-          border-radius: 50%;
-          object-fit: cover;
-          border: 2px solid #333;
-        }
+        .avatar-img { width: 56px; height: 56px; border-radius: 50%; object-fit: cover; border: 2px solid #333; }
 
-        .avatar-placeholder {
-          width: 56px;
-          height: 56px;
-          border-radius: 50%;
-          background: #222;
-          border: 2px solid #333;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-family: 'DM Serif Display', serif;
-          font-size: 22px;
-          color: var(--gold);
-        }
+        .avatar-placeholder { width: 56px; height: 56px; border-radius: 50%; background: #222; border: 2px solid #333; display: flex; align-items: center; justify-content: center; font-family: 'DM Serif Display', serif; font-size: 22px; color: var(--gold); }
 
-        .avatar-info {
-          display: flex;
-          flex-direction: column;
-          gap: 2px;
-        }
+        .avatar-info { display: flex; flex-direction: column; gap: 2px; }
+        .avatar-name { font-size: 15px; font-weight: 600; color: #fff; }
+        .avatar-email { font-size: 12px; color: #555; }
 
-        .avatar-name {
-          font-size: 15px;
-          font-weight: 600;
-          color: #fff;
-        }
+        .avatar-badge { margin-top: 4px; display: inline-flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gold); background: rgba(201,169,110,0.1); border: 1px solid rgba(201,169,110,0.2); padding: 2px 8px; border-radius: 99px; }
 
-        .avatar-email {
-          font-size: 12px;
-          color: #555;
-        }
-
-        .avatar-badge {
-          margin-top: 4px;
-          display: inline-flex;
-          align-items: center;
-          gap: 5px;
-          font-size: 10px;
-          font-weight: 600;
-          letter-spacing: 0.1em;
-          text-transform: uppercase;
-          color: var(--gold);
-          background: rgba(201,169,110,0.1);
-          border: 1px solid rgba(201,169,110,0.2);
-          padding: 2px 8px;
-          border-radius: 99px;
-        }
-
-        /* ── BODY ── */
         .body { padding: 0; }
 
-        /* ── SECTION ── */
-        .section {
-          padding: 28px 44px;
-          border-bottom: 1px solid var(--border);
-        }
-
+        .section { padding: 28px 44px; border-bottom: 1px solid var(--border); }
         .section:last-child { border-bottom: none; }
 
-        .section-title {
-          font-size: 11px;
-          font-weight: 700;
-          letter-spacing: 0.18em;
-          text-transform: uppercase;
-          color: var(--text-muted);
-          margin-bottom: 20px;
-        }
+        .section-title { font-size: 11px; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 20px; }
 
         .fields { display: flex; flex-direction: column; gap: 16px; }
 
-        .field-label {
-          display: block;
-          font-size: 11px;
-          font-weight: 700;
-          letter-spacing: 0.12em;
-          text-transform: uppercase;
-          color: var(--text-muted);
-          margin-bottom: 7px;
-        }
+        .field-label { display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 7px; }
 
-        .field-hint {
-          font-size: 11px;
-          color: var(--text-faint);
-          margin-top: 5px;
-        }
-
-        .field-input {
-          width: 100%;
-          border: 1.5px solid var(--border);
-          border-radius: 12px;
-          padding: 12px 16px;
-          font-family: 'DM Sans', sans-serif;
-          font-size: 14px;
-          font-weight: 400;
-          color: var(--text-primary);
-          background: var(--bg-input);
-          outline: none;
-          transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
-        }
-
+        .field-input { width: 100%; border: 1.5px solid var(--border); border-radius: 12px; padding: 12px 16px; font-family: 'DM Sans', sans-serif; font-size: 14px; color: var(--text-primary); background: var(--bg-input); outline: none; transition: border-color 0.2s, box-shadow 0.2s; }
         .field-input::placeholder { color: var(--text-faint); }
+        .field-input:focus { border-color: var(--border-focus); box-shadow: 0 0 0 3px var(--gold-glow); background: var(--bg-card); }
 
-        .field-input:focus {
-          border-color: var(--border-focus);
-          box-shadow: 0 0 0 3px var(--gold-glow);
-          background: var(--bg-card);
-        }
+        .alert-success { background: rgba(34,197,94,0.08); border: 1px solid rgba(34,197,94,0.2); border-radius: 10px; padding: 12px 16px; font-size: 13px; font-weight: 500; color: #16A34A; margin-bottom: 16px; }
+        .alert-error { background: rgba(220,38,38,0.08); border: 1px solid rgba(220,38,38,0.2); border-radius: 10px; padding: 12px 16px; font-size: 13px; font-weight: 500; color: #DC2626; margin-bottom: 16px; }
 
-        /* ── AVATAR PREVIEW LIVE ── */
-        .avatar-preview-row {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          margin-top: 10px;
-        }
-
-        .preview-img {
-          width: 40px;
-          height: 40px;
-          border-radius: 50%;
-          object-fit: cover;
-          border: 1.5px solid var(--border);
-        }
-
-        .preview-placeholder {
-          width: 40px;
-          height: 40px;
-          border-radius: 50%;
-          background: var(--bg-input);
-          border: 1.5px solid var(--border);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-family: 'DM Serif Display', serif;
-          font-size: 16px;
-          color: var(--gold);
-        }
-
-        .preview-label {
-          font-size: 12px;
-          color: var(--text-muted);
-        }
-
-        /* ── ALERTS ── */
-        .alert-success {
-          background: rgba(34,197,94,0.08);
-          border: 1px solid rgba(34,197,94,0.2);
-          border-radius: 10px;
-          padding: 12px 16px;
-          font-size: 13px;
-          font-weight: 500;
-          color: #16A34A;
-          margin-bottom: 16px;
-        }
-
-        .alert-error {
-          background: rgba(220,38,38,0.08);
-          border: 1px solid rgba(220,38,38,0.2);
-          border-radius: 10px;
-          padding: 12px 16px;
-          font-size: 13px;
-          font-weight: 500;
-          color: #DC2626;
-          margin-bottom: 16px;
-        }
-
-        /* ── BUTTONS ── */
-        .save-btn {
-          background: var(--btn-bg);
-          color: var(--bg-card);
-          border: none;
-          border-radius: 12px;
-          padding: 12px 24px;
-          font-family: 'DM Sans', sans-serif;
-          font-size: 14px;
-          font-weight: 700;
-          cursor: pointer;
-          transition: background 0.2s, transform 0.1s;
-          margin-top: 4px;
-        }
-
+        .save-btn { background: var(--btn-bg); color: var(--bg-card); border: none; border-radius: 12px; padding: 12px 24px; font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 700; cursor: pointer; transition: background 0.2s; margin-top: 4px; }
         .save-btn:hover { background: var(--btn-hover); }
-        .save-btn:active { transform: scale(0.97); }
 
-        .logout-btn {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          background: transparent;
-          border: 1.5px solid var(--border);
-          border-radius: 12px;
-          padding: 12px 24px;
-          font-family: 'DM Sans', sans-serif;
-          font-size: 14px;
-          font-weight: 600;
-          color: var(--text-primary);
-          cursor: pointer;
-          transition: background 0.15s, border-color 0.15s;
-          width: 100%;
-          justify-content: center;
-        }
+        .reset-password-box { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border: 1.5px solid var(--border); border-radius: 12px; background: var(--bg-input); }
+        .reset-password-info { display: flex; flex-direction: column; gap: 3px; }
+        .reset-password-label { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+        .reset-password-hint { font-size: 12px; color: var(--text-muted); }
+        .reset-password-link { font-size: 13px; font-weight: 700; color: var(--gold); text-decoration: none; white-space: nowrap; transition: opacity 0.15s; }
+        .reset-password-link:hover { opacity: 0.75; }
 
-        .logout-btn:hover {
-          background: var(--bg-input);
-          border-color: var(--text-muted);
-        }
+        .logout-btn { display: flex; align-items: center; gap: 8px; background: transparent; border: 1.5px solid var(--border); border-radius: 12px; padding: 12px 24px; font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 600; color: var(--text-primary); cursor: pointer; transition: background 0.15s; width: 100%; justify-content: center; }
+        .logout-btn:hover { background: var(--bg-input); border-color: var(--text-muted); }
 
-        .delete-btn {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          background: transparent;
-          border: 1.5px solid rgba(220,38,38,0.3);
-          border-radius: 12px;
-          padding: 12px 24px;
-          font-family: 'DM Sans', sans-serif;
-          font-size: 14px;
-          font-weight: 600;
-          color: #DC2626;
-          cursor: pointer;
-          transition: background 0.15s, border-color 0.15s;
-          width: 100%;
-          justify-content: center;
-          margin-top: 10px;
-        }
+        .delete-btn { display: flex; align-items: center; gap: 8px; background: transparent; border: 1.5px solid rgba(220,38,38,0.3); border-radius: 12px; padding: 12px 24px; font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 600; color: #DC2626; cursor: pointer; transition: background 0.15s; width: 100%; justify-content: center; margin-top: 10px; }
+        .delete-btn:hover { background: rgba(220,38,38,0.06); border-color: #DC2626; }
 
-        .delete-btn:hover {
-          background: rgba(220,38,38,0.06);
-          border-color: #DC2626;
-        }
+        .danger-note { font-size: 12px; color: var(--text-faint); margin-top: 10px; text-align: center; line-height: 1.5; }
 
-        .danger-note {
-          font-size: 12px;
-          color: var(--text-faint);
-          margin-top: 10px;
-          text-align: center;
-          line-height: 1.5;
-        }
-
-        /* ── MODAL ── */
-        .modal-overlay {
-          position: fixed;
-          inset: 0;
-          background: rgba(0,0,0,0.6);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          z-index: 1000;
-          padding: 24px;
-        }
-
-        .modal {
-          width: min(100%, 420px);
-          background: var(--bg-card);
-          border-radius: 20px;
-          border: 1px solid var(--border);
-          box-shadow: 0 30px 80px rgba(0,0,0,0.3);
-          padding: 32px;
-        }
-
-        .modal-title {
-          font-family: 'DM Serif Display', serif;
-          font-size: 24px;
-          color: var(--text-primary);
-          margin-bottom: 12px;
-        }
-
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 24px; }
+        .modal { width: min(100%, 420px); background: var(--bg-card); border-radius: 20px; border: 1px solid var(--border); box-shadow: 0 30px 80px rgba(0,0,0,0.3); padding: 32px; }
+        .modal-title { font-family: 'DM Serif Display', serif; font-size: 24px; color: var(--text-primary); margin-bottom: 12px; }
         .modal-title em { font-style: italic; color: #DC2626; }
-
-        .modal-body {
-          font-size: 14px;
-          color: var(--text-muted);
-          line-height: 1.6;
-          margin-bottom: 24px;
-        }
-
+        .modal-body { font-size: 14px; color: var(--text-muted); line-height: 1.6; margin-bottom: 24px; }
         .modal-body strong { color: var(--text-primary); }
-
         .modal-actions { display: flex; gap: 10px; }
-
-        .modal-delete-btn {
-          flex: 1;
-          background: #DC2626;
-          color: #fff;
-          border: none;
-          border-radius: 12px;
-          padding: 13px;
-          font-family: 'DM Sans', sans-serif;
-          font-size: 14px;
-          font-weight: 700;
-          cursor: pointer;
-          transition: background 0.2s;
-        }
-
+        .modal-delete-btn { flex: 1; background: #DC2626; color: #fff; border: none; border-radius: 12px; padding: 13px; font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 700; cursor: pointer; }
         .modal-delete-btn:hover { background: #B91C1C; }
-
-        .modal-cancel-btn {
-          flex: 1;
-          background: transparent;
-          border: 1.5px solid var(--border);
-          border-radius: 12px;
-          padding: 13px;
-          font-family: 'DM Sans', sans-serif;
-          font-size: 14px;
-          font-weight: 500;
-          color: var(--text-muted);
-          cursor: pointer;
-          transition: background 0.15s;
-        }
-
+        .modal-cancel-btn { flex: 1; background: transparent; border: 1.5px solid var(--border); border-radius: 12px; padding: 13px; font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 500; color: var(--text-muted); cursor: pointer; }
         .modal-cancel-btn:hover { background: var(--bg-input); }
 
-        .page-footer {
-          margin-top: 32px;
-          text-align: center;
-          font-size: 11px;
-          font-weight: 600;
-          letter-spacing: 0.18em;
-          text-transform: uppercase;
-          color: var(--text-faint);
-        }
-
+        .page-footer { margin-top: 32px; text-align: center; font-size: 11px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-faint); }
         .page-footer span { color: var(--gold); }
       `}</style>
 
@@ -537,15 +174,11 @@ export default function Settings() {
             <a href="/" className="back-link">← Back to tasks</a>
             <p className="banner-label">Account</p>
             <h1 className="banner-title">Your <em>Settings</em></h1>
-
-            {/* AVATAR + NAME PREVIEW */}
             <div className="avatar-row">
               {user.avatar ? (
                 <img src={user.avatar} alt={user.name} className="avatar-img" referrerPolicy="no-referrer" />
               ) : (
-                <div className="avatar-placeholder">
-                  {user.name.charAt(0).toUpperCase()}
-                </div>
+                <div className="avatar-placeholder">{user.name.charAt(0).toUpperCase()}</div>
               )}
               <div className="avatar-info">
                 <span className="avatar-name">{user.name}</span>
@@ -570,84 +203,37 @@ export default function Settings() {
             {/* PROFILE SECTION */}
             <div className="section">
               <p className="section-title">Profile</p>
-
-              {actionData?.success && (
-                <div className="alert-success">{actionData.success}</div>
-              )}
-              {actionData?.error && (
-                <div className="alert-error">{actionData.error}</div>
-              )}
-
+              {actionData?.success && <div className="alert-success">{actionData.success}</div>}
+              {actionData?.error && <div className="alert-error">{actionData.error}</div>}
               <Form method="post">
                 <input type="hidden" name="intent" value="update-profile" />
                 <div className="fields">
                   <div>
                     <label className="field-label" htmlFor="name">Display Name</label>
-                    <input
-                      id="name"
-                      name="name"
-                      type="text"
-                      defaultValue={user.name}
-                      className="field-input"
-                      placeholder="Your name"
-                    />
+                    <input id="name" name="name" type="text" defaultValue={user.name} className="field-input" placeholder="Your name" />
                   </div>
                 </div>
-                <button type="submit" className="save-btn" style={{ marginTop: "20px" }}>
-                  Save Changes
-                </button>
+                <button type="submit" className="save-btn" style={{ marginTop: "20px" }}>Save Changes</button>
               </Form>
             </div>
 
             {/* PASSWORD SECTION — only for non-Google users */}
             {!user.googleId && (
               <div className="section">
-                <p className="section-title">Change Password</p>
-                <Form method="post">
-                  <input type="hidden" name="intent" value="change-password" />
-                  <div className="fields">
-                    <div>
-                      <label className="field-label" htmlFor="currentPassword">Current Password</label>
-                      <input
-                        id="currentPassword"
-                        name="currentPassword"
-                        type="password"
-                        className="field-input"
-                        placeholder="Enter current password"
-                      />
-                    </div>
-                    <div>
-                      <label className="field-label" htmlFor="newPassword">New Password</label>
-                      <input
-                        id="newPassword"
-                        name="newPassword"
-                        type="password"
-                        className="field-input"
-                        placeholder="At least 6 characters"
-                      />
-                    </div>
-                    <div>
-                      <label className="field-label" htmlFor="confirmPassword">Confirm New Password</label>
-                      <input
-                        id="confirmPassword"
-                        name="confirmPassword"
-                        type="password"
-                        className="field-input"
-                        placeholder="Repeat new password"
-                      />
-                    </div>
+                <p className="section-title">Password</p>
+                <div className="reset-password-box">
+                  <div className="reset-password-info">
+                    <span className="reset-password-label">Reset your password</span>
+                    <span className="reset-password-hint">We'll email you a 6-digit code</span>
                   </div>
-                  <button type="submit" className="save-btn" style={{ marginTop: "20px" }}>
-                    Update Password
-                  </button>
-                </Form>
+                  <a href="/forgot-password" className="reset-password-link">Reset →</a>
+                </div>
               </div>
             )}
 
             {/* ACCOUNT SECTION */}
             <div className="section">
               <p className="section-title">Account</p>
-
               <Form method="post" action="/logout">
                 <button type="submit" className="logout-btn">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -658,26 +244,16 @@ export default function Settings() {
                   Sign Out
                 </button>
               </Form>
-
               <Form method="post" id="delete-form">
                 <input type="hidden" name="intent" value="delete-account" />
-                <button
-                  type="button"
-                  className="delete-btn"
-                  onClick={() => {
-                    const modal = document.getElementById("delete-modal");
-                    if (modal) modal.style.display = "flex";
-                  }}
-                >
+                <button type="button" className="delete-btn" onClick={() => { const m = document.getElementById("delete-modal"); if (m) m.style.display = "flex"; }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <polyline points="3 6 5 6 21 6"/>
                     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
                   </svg>
                   Delete Account
                 </button>
-                <p className="danger-note">
-                  This will permanently delete your account and all your tasks.
-                </p>
+                <p className="danger-note">This will permanently delete your account and all your tasks.</p>
               </Form>
             </div>
 
@@ -689,40 +265,17 @@ export default function Settings() {
         </footer>
       </div>
 
-      {/* DELETE CONFIRMATION MODAL */}
-      <div
-        id="delete-modal"
-        className="modal-overlay"
-        style={{ display: "none" }}
-        onClick={(e) => {
-          if (e.target === e.currentTarget) {
-            (e.currentTarget as HTMLElement).style.display = "none";
-          }
-        }}
-      >
+      {/* DELETE MODAL */}
+      <div id="delete-modal" className="modal-overlay" style={{ display: "none" }} onClick={(e) => { if (e.target === e.currentTarget) (e.currentTarget as HTMLElement).style.display = "none"; }}>
         <div className="modal">
           <h2 className="modal-title">Delete <em>Account?</em></h2>
-          <p className="modal-body">
-            This will permanently delete <strong>{user.name}</strong>'s account and
-            all associated tasks. <strong>This cannot be undone.</strong>
-          </p>
+          <p className="modal-body">This will permanently delete <strong>{user.name}</strong>'s account and all associated tasks. <strong>This cannot be undone.</strong></p>
           <div className="modal-actions">
             <Form method="post" style={{ flex: 1 }}>
               <input type="hidden" name="intent" value="delete-account" />
-              <button type="submit" className="modal-delete-btn">
-                Yes, delete everything
-              </button>
+              <button type="submit" className="modal-delete-btn">Yes, delete everything</button>
             </Form>
-            <button
-              type="button"
-              className="modal-cancel-btn"
-              onClick={() => {
-                const modal = document.getElementById("delete-modal");
-                if (modal) modal.style.display = "none";
-              }}
-            >
-              Cancel
-            </button>
+            <button type="button" className="modal-cancel-btn" onClick={() => { const m = document.getElementById("delete-modal"); if (m) m.style.display = "none"; }}>Cancel</button>
           </div>
         </div>
       </div>

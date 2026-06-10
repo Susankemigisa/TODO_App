@@ -18,32 +18,23 @@ export async function action({ request }: ActionFunctionArgs) {
   const user = await db.user.findUnique({ where: { email } });
   if (!user) return { error: "Invalid request" };
 
-  // Find valid code
-  const reset = await (db as any).resetPassword.findFirst({
-    where: {
-      userId: user.id,
-      code,
-      used: false,
-      expiresAt: { gt: new Date() },
-    },
+  const reset = await (db as any).passwordReset.findFirst({
+    where: { userId: user.id, code, used: false, expiresAt: { gt: new Date() } },
   });
 
   if (!reset) return { error: "Invalid or expired code. Please request a new one." };
 
-  // Hash new password and update user
   const hashedPassword = await bcrypt.hash(password, 10);
-  await db.user.update({
-    where: { id: user.id },
-    data: { password: hashedPassword },
-  });
-
-  // Mark code as used
-  await (db as any).resetPassword.update({
-    where: { id: reset.id },
-    data: { used: true },
-  });
+  await db.user.update({ where: { id: user.id }, data: { password: hashedPassword } });
+  await (db as any).passwordReset.update({ where: { id: reset.id }, data: { used: true } });
 
   return redirect("/login?reset=success");
+}
+
+export function links() {
+  return [
+    { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" },
+  ];
 }
 
 export default function ResetPassword() {
@@ -55,36 +46,84 @@ export default function ResetPassword() {
     <>
       <style>{`
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: #0E0E0E; font-family: 'DM Sans', sans-serif; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
-        .card { background: #1A1A1A; border: 1px solid #2E2E2E; border-radius: 24px; padding: 40px; width: min(100%, 420px); }
-        .title { font-size: 24px; font-weight: 700; color: #F0EDE7; margin-bottom: 8px; }
-        .subtitle { font-size: 14px; color: #999; margin-bottom: 32px; line-height: 1.6; }
-        .label { display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #999; margin-bottom: 6px; }
-        .input { width: 100%; border: 1.5px solid #2E2E2E; border-radius: 12px; padding: 13px 17px; font-family: 'DM Sans', sans-serif; font-size: 14px; color: #F0EDE7; background: #242424; outline: none; transition: border-color 0.2s; margin-bottom: 16px; }
-        .input:focus { border-color: #C9A96E; box-shadow: 0 0 0 3px rgba(201,169,110,0.15); }
-        .code-input { text-align: center; font-size: 28px; font-weight: 700; letter-spacing: 12px; }
-        .btn { width: 100%; background: #F0EDE7; color: #111; border: none; border-radius: 12px; padding: 13px; font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 700; cursor: pointer; transition: background 0.2s; }
-        .btn:hover { background: #fff; }
-        .error { color: #DC2626; font-size: 13px; font-weight: 600; margin-bottom: 16px; }
-        .back { display: block; text-align: center; margin-top: 20px; font-size: 13px; color: #999; text-decoration: none; }
-        .back:hover { color: #F0EDE7; }
-        .hint { font-size: 12px; color: #666; margin-top: -10px; margin-bottom: 16px; }
+        :root {
+          --bg-page: #F5F2EC; --bg-card: #FFFFFF; --bg-banner: #111111; --bg-input: #F9F7F3;
+          --text-primary: #111111; --text-muted: #999999; --text-faint: #CCCCCC;
+          --border: #E8E3DA; --border-focus: #C9A96E; --gold: #C9A96E;
+          --gold-glow: rgba(201,169,110,0.15); --btn-bg: #111111; --btn-hover: #2a2a2a;
+          --shadow-card: 0 4px 8px rgba(0,0,0,0.04), 0 24px 64px rgba(0,0,0,0.09);
+        }
+        @media (prefers-color-scheme: dark) {
+          :root {
+            --bg-page: #0E0E0E; --bg-card: #1A1A1A; --bg-banner: #000000; --bg-input: #242424;
+            --text-primary: #F0EDE7; --text-muted: #999999; --text-faint: #808080;
+            --border: #2E2E2E; --border-focus: #C9A96E; --gold: #C9A96E;
+            --gold-glow: rgba(201,169,110,0.12); --btn-bg: #F0EDE7; --btn-hover: #FFFFFF;
+            --shadow-card: 0 4px 8px rgba(0,0,0,0.3), 0 24px 64px rgba(0,0,0,0.5);
+          }
+        }
+        body { background: var(--bg-page); font-family: 'DM Sans', sans-serif; color: var(--text-primary); min-height: 100vh; }
+        .page { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 20px; }
+        .card { width: 100%; max-width: 460px; background: var(--bg-card); border-radius: 24px; box-shadow: var(--shadow-card); overflow: hidden; border: 1px solid var(--border); }
+        .banner { background: var(--bg-banner); padding: 36px 44px 28px; }
+        .banner-label { font-size: 10px; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; color: #555; margin-bottom: 8px; }
+        .banner-title { font-family: 'DM Serif Display', serif; font-size: 36px; color: #fff; line-height: 1.05; }
+        .banner-title em { font-style: italic; color: var(--gold); }
+        .body { padding: 36px 44px 44px; }
+        .subtitle { font-size: 14px; color: var(--text-muted); margin-bottom: 28px; line-height: 1.6; }
+        .email-highlight { color: var(--gold); font-weight: 600; }
+        .fields { display: flex; flex-direction: column; gap: 20px; }
+        .field-label { display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }
+        .field-input { width: 100%; border: 1.5px solid var(--border); border-radius: 12px; padding: 13px 17px; font-family: 'DM Sans', sans-serif; font-size: 14px; color: var(--text-primary); background: var(--bg-input); outline: none; transition: border-color 0.2s, box-shadow 0.2s; }
+        .field-input::placeholder { color: var(--text-faint); }
+        .field-input:focus { border-color: var(--border-focus); box-shadow: 0 0 0 3px var(--gold-glow); background: var(--bg-card); }
+        .code-input { text-align: center; font-size: 28px; font-weight: 700; letter-spacing: 10px; }
+        .submit-btn { width: 100%; background: var(--btn-bg); color: var(--bg-card); border: none; border-radius: 12px; padding: 14px; font-family: 'DM Sans', sans-serif; font-size: 15px; font-weight: 700; cursor: pointer; transition: background 0.2s; margin-top: 8px; }
+        .submit-btn:hover { background: var(--btn-hover); }
+        .alert-error { background: rgba(220,38,38,0.08); border: 1px solid rgba(220,38,38,0.2); border-radius: 10px; padding: 12px 16px; font-size: 13px; font-weight: 500; color: #DC2626; margin-bottom: 20px; }
+        .footer-link { text-align: center; margin-top: 20px; font-size: 13px; color: var(--text-muted); }
+        .footer-link a { color: var(--gold); font-weight: 600; text-decoration: none; }
+        .footer-link a:hover { text-decoration: underline; }
       `}</style>
-      <div className="card">
-        <h1 className="title">Reset password</h1>
-        <p className="subtitle">Enter the 6-digit code we sent to <strong style={{color: "#C9A96E"}}>{email}</strong> and choose a new password.</p>
-        {actionData?.error && <p className="error">{actionData.error}</p>}
-        <Form method="post">
-          <input type="hidden" name="email" value={email} />
-          <label className="label" htmlFor="code">6-digit code</label>
-          <input id="code" name="code" type="text" className="input code-input" placeholder="000000" maxLength={6} required />
-          <label className="label" htmlFor="password">New password</label>
-          <input id="password" name="password" type="password" className="input" placeholder="Min. 8 characters" required />
-          <label className="label" htmlFor="confirmPassword">Confirm password</label>
-          <input id="confirmPassword" name="confirmPassword" type="password" className="input" placeholder="Repeat new password" required />
-          <button type="submit" className="btn">Reset password</button>
-        </Form>
-        <a href="/forgot-password" className="back">← Request a new code</a>
+      <div className="page">
+        <div className="card">
+          <div className="banner">
+            <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: "6px" }}>
+              <svg width="40" height="40" viewBox="0 0 80 80" fill="none">
+                <polygon points="40,4 72,40 40,76 8,40" fill="none" stroke="#C9A96E" strokeWidth="2.5"/>
+                <polygon points="40,18 58,40 40,62 22,40" fill="#C9A96E" opacity="0.12"/>
+              </svg>
+              <span style={{ fontFamily: "'DM Serif Display', serif", fontSize: "22px", fontStyle: "italic", color: "#C9A96E" }}>Tasks</span>
+            </div>
+            <p className="banner-label">Password Reset</p>
+            <h1 className="banner-title">New <em>Password</em></h1>
+          </div>
+          <div className="body">
+            <p className="subtitle">
+              Enter the 6-digit code sent to <span className="email-highlight">{email}</span> and choose a new password.
+            </p>
+            {actionData?.error && <div className="alert-error">{actionData.error}</div>}
+            <Form method="post">
+              <input type="hidden" name="email" value={email} />
+              <div className="fields">
+                <div>
+                  <label className="field-label" htmlFor="code">6-digit code</label>
+                  <input id="code" name="code" type="text" className="field-input code-input" placeholder="000000" maxLength={6} autoFocus required />
+                </div>
+                <div>
+                  <label className="field-label" htmlFor="password">New password</label>
+                  <input id="password" name="password" type="password" className="field-input" placeholder="Min. 8 characters" required />
+                </div>
+                <div>
+                  <label className="field-label" htmlFor="confirmPassword">Confirm password</label>
+                  <input id="confirmPassword" name="confirmPassword" type="password" className="field-input" placeholder="Repeat new password" required />
+                </div>
+                <button type="submit" className="submit-btn">Reset password</button>
+              </div>
+            </Form>
+            <p className="footer-link"><a href="/forgot-password">← Request a new code</a></p>
+          </div>
+        </div>
       </div>
     </>
   );
