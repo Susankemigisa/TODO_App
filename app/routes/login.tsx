@@ -329,7 +329,7 @@ export default function Login() {
                 <div>
                   <label className="field-label" htmlFor="password">Password</label>
                   <PasswordInput id="password" name="password" placeholder="Your password" />
-                  <a href="/forgot-password" className="forgot-password-link">
+                  <a href="/forgot-password" style={{ fontSize: "12px", color: "var(--gold)", fontWeight: "600", textDecoration: "none", display: "block", textAlign: "right", marginTop: "6px" }}>
                     Forgot your password?
                   </a>
                 </div>

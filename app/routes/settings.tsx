@@ -217,19 +217,7 @@ export default function Settings() {
               </Form>
             </div>
 
-            {/* PASSWORD SECTION — only for non-Google users */}
-            {!user.googleId && (
-              <div className="section">
-                <p className="section-title">Password</p>
-                <div className="reset-password-box">
-                  <div className="reset-password-info">
-                    <span className="reset-password-label">Reset your password</span>
-                    <span className="reset-password-hint">We'll email you a 6-digit code</span>
-                  </div>
-                  <a href="/forgot-password" className="reset-password-link">Reset →</a>
-                </div>
-              </div>
-            )}
+
 
             {/* ACCOUNT SECTION */}
             <div className="section">
