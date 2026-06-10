@@ -6,13 +6,8 @@ declare global {
 }
 
 function getClient() {
-  if (process.env.NODE_ENV === "production") {
-    return new PrismaClient();
-  }
-  if (!global.__prisma) {
-    global.__prisma = new PrismaClient();
-  }
-  return global.__prisma;
+  const client = new PrismaClient();
+  return client;
 }
 
 export const db = getClient();
