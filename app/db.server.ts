@@ -6,8 +6,7 @@ declare global {
 }
 
 function getClient() {
-  const client = new PrismaClient();
-  return client;
+  return new PrismaClient();
 }
 
 export const db = getClient();
