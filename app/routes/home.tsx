@@ -26,11 +26,33 @@ export async function loader({ request }: Route.LoaderArgs) {
     where: search
       ? { ...where, title: { contains: search, mode: "insensitive" as const } }
       : where,
-    orderBy: [{ dueDate: "asc" }, { createdAt: "desc" }],
+    orderBy: [{ createdAt: "desc" }],
     include: ({ subtasks: { orderBy: { order: "asc" } }, tags: { include: { tag: true } } } as any),
   });
 
-  // Group by date
+  // Sort todos by due date priority: today first, then future, then overdue, then no date
+  function sortByDuePriority(todos: typeof allTodos) {
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
+
+    function priority(t: typeof allTodos[0]) {
+      if (!t.dueDate) return 3;
+      const d = new Date(t.dueDate);
+      if (d >= todayStart && d < todayEnd) return 0; // due today
+      if (d > todayEnd) return 1;                     // future
+      return 2;                                        // overdue
+    }
+
+    return [...todos].sort((a, b) => {
+      const pa = priority(a), pb = priority(b);
+      if (pa !== pb) return pa - pb;
+      // Within same priority, sort by createdAt desc (newest first)
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+  }
+
+  // Group by createdAt date
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const yesterday = new Date(today);
@@ -57,12 +79,12 @@ export async function loader({ request }: Route.LoaderArgs) {
     return d.getTime() < weekAgo.getTime();
   });
 
-  if (todayTodos.length) groups.push({ label: "Today", todos: todayTodos });
-  if (yesterdayTodos.length) groups.push({ label: "Yesterday", todos: yesterdayTodos });
-  if (thisWeekTodos.length) groups.push({ label: "This Week", todos: thisWeekTodos });
+  if (todayTodos.length) groups.push({ label: "Today", todos: sortByDuePriority(todayTodos) });
+  if (yesterdayTodos.length) groups.push({ label: "Yesterday", todos: sortByDuePriority(yesterdayTodos) });
+  if (thisWeekTodos.length) groups.push({ label: "This Week", todos: sortByDuePriority(thisWeekTodos) });
 
   const hasOlder = olderTodos.length > 0;
-  if (showAll && olderTodos.length) groups.push({ label: "Older", todos: olderTodos });
+  if (showAll && olderTodos.length) groups.push({ label: "Older", todos: sortByDuePriority(olderTodos) });
 
   const totalCount = await db.todo.count({ where: baseWhere });
   const activeCount = await db.todo.count({ where: { ...baseWhere, done: false } });
