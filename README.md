@@ -258,7 +258,7 @@ npx prisma migrate deploy
 
 **Suzan Kemigisa**
 - GitHub: [@Susankemigisa](https://github.com/Susankemigisa)
-- Email: susankemigisa32@gmail.com
+- Email: kemigisa32@gmail.com
 
 ---
 
