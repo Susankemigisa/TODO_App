@@ -1,12 +1,14 @@
-import pkg from "@prisma/client";
-const { PrismaClient } = pkg;
+import { PrismaClient } from "@prisma/client";
 
 declare global {
-  var __prisma: InstanceType<typeof PrismaClient> | undefined;
+  var __prisma: PrismaClient | undefined;
 }
 
 function getClient() {
-  return new PrismaClient();
+  if (!global.__prisma) {
+    global.__prisma = new PrismaClient();
+  }
+  return global.__prisma;
 }
 
 export const db = getClient();
