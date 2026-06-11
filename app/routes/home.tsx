@@ -263,9 +263,9 @@ function isFutureDueDate(date: string | Date | null) {
   return due.getTime() > today.getTime();
 }
 
-const VISIBLE_COUNT = 3;
+const VISIBLE_COUNT = 5;
 // Total tasks shown across ALL groups before "See more"
-const GLOBAL_VISIBLE = 3;
+const GLOBAL_VISIBLE = 5;
 
 export default function Home() {
   const actionData = useActionData<{ error?: string }>();
@@ -826,7 +826,11 @@ export default function Home() {
 
             {/* ADD FORM — input first, options toggle, Add button at bottom */}
             <Form method="post" style={{ marginBottom: "20px" }} onSubmit={(e) => {
-              setTimeout(() => (e.target as HTMLFormElement).reset(), 0);
+              setTimeout(() => {
+                (e.target as HTMLFormElement).reset();
+                setRecurrence("NONE");
+                setShowFullForm(false);
+              }, 0);
             }}>
               <input type="hidden" name="intent" value="create" />
               <input
