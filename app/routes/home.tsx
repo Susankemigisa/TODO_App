@@ -103,6 +103,8 @@ export async function action({ request }: Route.ActionArgs) {
     const title = formData.get("title") as string;
     const priority = (formData.get("priority") as string) || "MEDIUM";
     const dueDateRaw = formData.get("dueDate") as string;
+    const startDateRaw = formData.get("startDate") as string;
+    const endDateRaw = formData.get("endDate") as string;
     const notes = formData.get("notes") as string;
     const recurrence = (formData.get("recurrence") as string) || "NONE";
     if (!title || title.trim() === "") return { error: "Title cannot be empty" };
@@ -112,11 +114,16 @@ export async function action({ request }: Route.ActionArgs) {
     });
     if (existing) return { error: `You already have a task called "${title.trim()}"` };
 
+    const isRecurring = recurrence !== "NONE";
+
     await db.todo.create({
       data: {
         title: title.trim(),
         priority: priority as "LOW" | "MEDIUM" | "HIGH",
-        dueDate: dueDateRaw ? new Date(dueDateRaw) : null,
+        // For recurring tasks use startDate/endDate, for one-off use dueDate
+        dueDate: isRecurring ? null : (dueDateRaw ? new Date(dueDateRaw) : null),
+        startDate: isRecurring ? (startDateRaw ? new Date(startDateRaw) : new Date()) : null,
+        endDate: isRecurring ? (endDateRaw ? new Date(endDateRaw) : null) : null,
         notes: notes?.trim() || null,
         recurrence: recurrence as "NONE" | "DAILY" | "WEEKLY" | "MONTHLY",
         user: { connect: { id: userId } },
@@ -202,26 +209,43 @@ function PriorityBadge({ priority }: { priority: string }) {
   );
 }
 
-function formatDueDate(date: string | Date | null, recurrence?: string) {
+function formatDueDate(date: string | Date | null, recurrence?: string, startDate?: string | Date | null, endDate?: string | Date | null) {
+  const isRecurring = recurrence && recurrence !== "NONE";
+
+  // Recurring task — use startDate/endDate
+  if (isRecurring && startDate) {
+    const raw = typeof startDate === "string" ? startDate : startDate.toISOString();
+    const [year, month, day] = raw.split("T")[0].split("-").map(Number);
+    const start = new Date(year, month - 1, day);
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const diffDays = Math.round((start.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    const formattedStart = start.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+
+    let endText = "";
+    if (endDate) {
+      const endRaw = typeof endDate === "string" ? endDate : endDate.toISOString();
+      const [ey, em, ed] = endRaw.split("T")[0].split("-").map(Number);
+      const end = new Date(ey, em - 1, ed);
+      const formattedEnd = end.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      endText = ` → ${formattedEnd}`;
+    }
+
+    if (diffDays < 0) return { text: `Started ${formattedStart}${endText} · ${String(recurrence).toLowerCase()}`, color: "#6B7280" };
+    if (diffDays === 0) return { text: `Starts today${endText} · ${String(recurrence).toLowerCase()}`, color: "#C9A96E" };
+    if (diffDays === 1) return { text: `Starts tomorrow${endText} · ${String(recurrence).toLowerCase()}`, color: "#C9A96E" };
+    return { text: `Starts ${formattedStart}${endText} · ${String(recurrence).toLowerCase()}`, color: "#6B7280" };
+  }
+
+  // One-off task — use dueDate
   if (!date) return null;
   const raw = typeof date === "string" ? date : date.toISOString();
   const [year, month, day] = raw.split("T")[0].split("-").map(Number);
   const d = new Date(year, month - 1, day);
-
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const diffDays = Math.round((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-
   const formatted = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-
-  // For recurring tasks with future due dates, use "Starts" language
-  const isRecurring = recurrence && recurrence !== "NONE";
-  if (isRecurring && diffDays > 0) {
-    if (diffDays === 1) return { text: `Starts tomorrow · ${formatted}`, color: "#C9A96E" };
-    if (recurrence === "WEEKLY" && diffDays <= 7) return { text: `Starts next week · ${formatted}`, color: "#C9A96E" };
-    if (recurrence === "MONTHLY" && diffDays <= 31) return { text: `Starts next month · ${formatted}`, color: "#C9A96E" };
-    return { text: `Starts ${formatted}`, color: "#6B7280" };
-  }
 
   if (diffDays < 0) return { text: `Overdue · ${formatted}`, color: "#DC2626" };
   if (diffDays === 0) return { text: `Due today · ${formatted}`, color: "#C9A96E" };
@@ -253,6 +277,7 @@ export default function Home() {
   const todos = groups.flatMap(group => group.todos);
   const selectedDeleteTodo = deleteConfirmId ? todos.find((todo) => todo.id === deleteConfirmId) : undefined;
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [recurrence, setRecurrence] = useState("NONE");
 
   // Universal "See more"
   const [showMoreTasks, setShowMoreTasks] = useState(false);
@@ -839,25 +864,52 @@ export default function Home() {
                       </select>
                     </div>
                     <div>
-                      <label className="field-label" htmlFor="dueDate">Due Date</label>
-                      <input id="dueDate" type="date" name="dueDate" className="field-date" />
-                    </div>
-                  </div>
-                  <div className="extra-fields">
-                    <div>
                       <label className="field-label" htmlFor="recurrence">Repeat</label>
-                      <select id="recurrence" name="recurrence" className="field-select" defaultValue="NONE">
+                      <select
+                        id="recurrence"
+                        name="recurrence"
+                        className="field-select"
+                        defaultValue="NONE"
+                        onChange={(e) => setRecurrence(e.target.value)}
+                      >
                         <option value="NONE">No repeat</option>
                         <option value="DAILY">Daily</option>
                         <option value="WEEKLY">Weekly</option>
                         <option value="MONTHLY">Monthly</option>
                       </select>
                     </div>
-                    <div>
-                      <label className="field-label" htmlFor="notes">Notes</label>
-                      <input id="notes" name="notes" className="field-date" placeholder="Optional notes…" />
-                    </div>
                   </div>
+
+                  {/* Show due date for one-off, start+end for recurring */}
+                  {recurrence === "NONE" ? (
+                    <div className="extra-fields">
+                      <div>
+                        <label className="field-label" htmlFor="dueDate">Due Date</label>
+                        <input id="dueDate" type="date" name="dueDate" className="field-date" />
+                      </div>
+                      <div>
+                        <label className="field-label" htmlFor="notes">Notes</label>
+                        <input id="notes" name="notes" className="field-date" placeholder="Optional notes…" />
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                      <div className="extra-fields">
+                        <div>
+                          <label className="field-label" htmlFor="startDate">Start Date</label>
+                          <input id="startDate" type="date" name="startDate" className="field-date" />
+                        </div>
+                        <div>
+                          <label className="field-label" htmlFor="endDate">End Date</label>
+                          <input id="endDate" type="date" name="endDate" className="field-date" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="field-label" htmlFor="notes">Notes</label>
+                        <input id="notes" name="notes" className="field-date" placeholder="Optional notes…" />
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -940,7 +992,7 @@ export default function Home() {
                           </div>
                           <ul className="todo-list">
                             {groupTodos.map((todo) => {
-                        const due = formatDueDate(todo.dueDate, todo.recurrence);
+                        const due = formatDueDate(todo.dueDate, todo.recurrence, todo.startDate, todo.endDate);
                         const subtasks = Array.isArray(todo.subtasks)
                           ? (todo.subtasks as Array<{ id: string; title: string; done: boolean }>)
                           : [];

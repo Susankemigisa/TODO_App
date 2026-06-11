@@ -50,6 +50,8 @@ model Todo {
   done        Boolean     @default(false)
   priority    Priority    @default(MEDIUM)
   dueDate     DateTime?
+    startDate  DateTime?
+    endDate    DateTime?
   recurrence  Recurrence  @default(NONE)
   order       Int         @default(0)
   createdAt   DateTime    @default(now())
