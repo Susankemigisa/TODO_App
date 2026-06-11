@@ -263,9 +263,9 @@ function isFutureDueDate(date: string | Date | null) {
   return due.getTime() > today.getTime();
 }
 
-const VISIBLE_COUNT = 5;
+const VISIBLE_COUNT = 3;
 // Total tasks shown across ALL groups before "See more"
-const GLOBAL_VISIBLE = 5;
+const GLOBAL_VISIBLE = 3;
 
 export default function Home() {
   const actionData = useActionData<{ error?: string }>();
