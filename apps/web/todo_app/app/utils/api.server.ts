@@ -14,6 +14,10 @@ export async function apiFetch(
     },
   });
 
+  if (res.status === 401) {
+    throw new Response('Unauthorized', { status: 401 });
+  }
+
   if (!res.ok) {
     const error = await res.json().catch(() => ({}));
     throw new Error(error.message ?? `API error: ${res.status}`);
