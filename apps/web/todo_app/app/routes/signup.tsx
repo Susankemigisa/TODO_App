@@ -34,7 +34,7 @@ export async function action({ request }: Route.ActionArgs) {
     }
 
     const result = await res.json();
-    return createUserSession(result.user.id, result.access_token, "/");
+    return createUserSession(result.user.id, result.access_token, "/home");
   } catch {
     return { error: "Something went wrong. Please try again." };
   }

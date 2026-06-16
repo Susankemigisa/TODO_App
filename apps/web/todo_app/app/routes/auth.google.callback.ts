@@ -21,7 +21,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     if (!res.ok) throw new Error("Google auth failed");
 
     const result = await res.json();
-    return createUserSession(result.user.id, result.access_token, "/");
+    return createUserSession(result.user.id, result.access_token, "/home");
   } catch (error) {
     console.error("Google auth error:", error);
     return redirect("/login?error=google");

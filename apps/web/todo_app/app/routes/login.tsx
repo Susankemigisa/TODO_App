@@ -15,7 +15,7 @@ export async function action({ request }: Route.ActionArgs) {
   try {
     const { apiLogin } = await import("../utils/api.server");
     const result = await apiLogin(email, password);
-    return createUserSession(result.user.id, result.access_token, "/");
+    return createUserSession(result.user.id, result.access_token, "/home");
   } catch {
     return { error: "Invalid email or password" };
   }
