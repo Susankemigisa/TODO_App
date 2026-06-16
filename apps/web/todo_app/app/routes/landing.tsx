@@ -34,6 +34,26 @@ export default function Landing() {
           --gold-dim: rgba(201,169,110,0.12);
           --gold-glow: rgba(201,169,110,0.2);
         }
+
+        @media (prefers-color-scheme: light) {
+            :root {
+                --bg: #F7F5F0;
+                --bg-card: #FFFFFF;
+                --bg-input: #EDEBE6;
+                --text: #1A1A1A;
+                --muted: #666;
+                --faint: #999;
+                --border: #E0DDD8;
+                --gold: #B8863A;
+                --gold-dim: rgba(184,134,58,0.10);
+                --gold-glow: rgba(184,134,58,0.18);
+            }
+            .preview-bar { background: #EDEBE6; }
+            .preview-header { background: #F0EDE7; }
+            .preview-task { background: #F7F5F0; }
+            nav { background: #F7F5F0; }
+            }
+            
         body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; min-height: 100vh; }
         .serif { font-family: 'DM Serif Display', serif; }
 
