@@ -14,7 +14,20 @@ export async function loader({ request }: Route.LoaderArgs) {
   const search = url.searchParams.get("search") ?? "";
   const showAll = url.searchParams.get("showAll") === "true";
 
-  const allTodos = await apiFetch(`/todos`, token);
+  let allTodos: any[] = [];
+  try {
+    allTodos = await apiFetch(`/todos`, token);
+  } catch (error: any) {
+    if (error instanceof Response && error.status === 401) {
+      const { logout } = await import("../session.server");
+      return logout(request);
+    }
+    if (error?.message === "Invalid token") {
+      const { logout } = await import("../session.server");
+      return logout(request);
+    }
+    throw error;
+  }
 
   // Apply filter
   let filtered = allTodos;
