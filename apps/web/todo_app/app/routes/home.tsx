@@ -1,53 +1,48 @@
 ﻿import { Form, useActionData, useLoaderData, useNavigate, useSubmit } from "react-router";
 import { useState, useRef, useEffect } from "react";
-import { db } from "../db.server";
-import { requireUserId, getUser } from "../session.server";
+import { requireUserId, requireAccessToken, getUser } from "../session.server";
+import { apiFetch } from "../utils/api.server";
+import { weekValueToDate, monthValueToDate } from "../utils/recurrence-dates";
 import type { Route } from "./+types/home";
-
 
 export async function loader({ request }: Route.LoaderArgs) {
   const userId = await requireUserId(request);
+  const token = await requireAccessToken(request);
   const user = await getUser(request);
-
   const url = new URL(request.url);
   const filter = url.searchParams.get("filter") ?? "all";
   const search = url.searchParams.get("search") ?? "";
   const showAll = url.searchParams.get("showAll") === "true";
 
-  const baseWhere = { userId };
-  const where =
-    filter === "active"
-      ? { ...baseWhere, done: false }
-      : filter === "completed"
-      ? { ...baseWhere, done: true }
-      : baseWhere;
+  const allTodos = await apiFetch(`/todos`, token);
 
-  const allTodos = await db.todo.findMany({
-    where: search
-      ? { ...where, title: { contains: search, mode: "insensitive" as const } }
-      : where,
-    orderBy: [{ createdAt: "desc" }],
-    include: ({ subtasks: { orderBy: { order: "asc" } }, tags: { include: { tag: true } } } as any),
-  });
+  // Apply filter
+  let filtered = allTodos;
+  if (filter === "active") filtered = allTodos.filter((t: any) => !t.done);
+  if (filter === "completed") filtered = allTodos.filter((t: any) => t.done);
 
-  // Sort todos by due date priority: today first, then future, then overdue, then no date
-  function sortByDuePriority(todos: typeof allTodos) {
+  // Apply search
+  if (search) {
+    filtered = filtered.filter((t: any) =>
+      t.title.toLowerCase().includes(search.toLowerCase())
+    );
+  }
+
+  // Sort by due date priority
+  function sortByDuePriority(todos: any[]) {
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
-
-    function priority(t: typeof allTodos[0]) {
+    function priority(t: any) {
       if (!t.dueDate) return 3;
       const d = new Date(t.dueDate);
-      if (d >= todayStart && d < todayEnd) return 0; // due today
-      if (d > todayEnd) return 1;                     // future
-      return 2;                                        // overdue
+      if (d >= todayStart && d < todayEnd) return 0;
+      if (d > todayEnd) return 1;
+      return 2;
     }
-
     return [...todos].sort((a, b) => {
       const pa = priority(a), pb = priority(b);
       if (pa !== pb) return pa - pb;
-      // Within same priority, sort by createdAt desc (newest first)
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
   }
@@ -60,21 +55,22 @@ export async function loader({ request }: Route.LoaderArgs) {
   const weekAgo = new Date(today);
   weekAgo.setDate(weekAgo.getDate() - 7);
 
-  type Group = { label: string; todos: typeof allTodos };
+  type Group = { label: string; todos: any[] };
   const groups: Group[] = [];
-  const todayTodos = allTodos.filter(t => {
+
+  const todayTodos = filtered.filter((t: any) => {
     const d = new Date(t.createdAt); d.setHours(0,0,0,0);
     return d.getTime() === today.getTime();
   });
-  const yesterdayTodos = allTodos.filter(t => {
+  const yesterdayTodos = filtered.filter((t: any) => {
     const d = new Date(t.createdAt); d.setHours(0,0,0,0);
     return d.getTime() === yesterday.getTime();
   });
-  const thisWeekTodos = allTodos.filter(t => {
+  const thisWeekTodos = filtered.filter((t: any) => {
     const d = new Date(t.createdAt); d.setHours(0,0,0,0);
     return d.getTime() < yesterday.getTime() && d.getTime() >= weekAgo.getTime();
   });
-  const olderTodos = allTodos.filter(t => {
+  const olderTodos = filtered.filter((t: any) => {
     const d = new Date(t.createdAt); d.setHours(0,0,0,0);
     return d.getTime() < weekAgo.getTime();
   });
@@ -82,20 +78,18 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (todayTodos.length) groups.push({ label: "Today", todos: sortByDuePriority(todayTodos) });
   if (yesterdayTodos.length) groups.push({ label: "Yesterday", todos: sortByDuePriority(yesterdayTodos) });
   if (thisWeekTodos.length) groups.push({ label: "This Week", todos: sortByDuePriority(thisWeekTodos) });
-
   const hasOlder = olderTodos.length > 0;
   if (showAll && olderTodos.length) groups.push({ label: "Older", todos: sortByDuePriority(olderTodos) });
 
-  const totalCount = await db.todo.count({ where: baseWhere });
-  const activeCount = await db.todo.count({ where: { ...baseWhere, done: false } });
-  const completedCount = await db.todo.count({ where: { ...baseWhere, done: true } });
+  const totalCount = allTodos.length;
+  const activeCount = allTodos.filter((t: any) => !t.done).length;
+  const completedCount = allTodos.filter((t: any) => t.done).length;
 
   return { groups, filter, search, showAll, hasOlder, totalCount, activeCount, completedCount, user };
 }
 
-
 export async function action({ request }: Route.ActionArgs) {
-  const userId = await requireUserId(request);
+  const token = await requireAccessToken(request);
   const formData = await request.formData();
   const intent = formData.get("intent");
 
@@ -103,79 +97,94 @@ export async function action({ request }: Route.ActionArgs) {
     const title = formData.get("title") as string;
     const priority = (formData.get("priority") as string) || "MEDIUM";
     const dueDateRaw = formData.get("dueDate") as string;
-    const startDateRaw = formData.get("startDate") as string;
-    const endDateRaw = formData.get("endDate") as string;
     const notes = formData.get("notes") as string;
     const recurrence = (formData.get("recurrence") as string) || "NONE";
     if (!title || title.trim() === "") return { error: "Title cannot be empty" };
-
-    const existing = await db.todo.findFirst({
-      where: { userId, done: false, title: { equals: title.trim(), mode: "insensitive" } },
-    });
-    if (existing) return { error: `You already have a task called "${title.trim()}"` };
-
     const isRecurring = recurrence !== "NONE";
 
-    await db.todo.create({
-      data: {
+    let startDate: string | null = null;
+    let endDate: string | null = null;
+
+    if (isRecurring) {
+      if (recurrence === "DAILY") {
+        const startDateRaw = formData.get("startDate") as string;
+        const endDateRaw = formData.get("endDate") as string;
+        startDate = startDateRaw || new Date().toISOString();
+        endDate = endDateRaw || null;
+      } else if (recurrence === "WEEKLY") {
+        const startWeekRaw = formData.get("startWeek") as string;
+        const endWeekRaw = formData.get("endWeek") as string;
+        startDate = startWeekRaw ? weekValueToDate(startWeekRaw).toISOString() : new Date().toISOString();
+        endDate = endWeekRaw ? weekValueToDate(endWeekRaw, true).toISOString() : null;
+      } else if (recurrence === "MONTHLY") {
+        const startMonthRaw = formData.get("startMonth") as string;
+        const endMonthRaw = formData.get("endMonth") as string;
+        startDate = startMonthRaw ? monthValueToDate(startMonthRaw).toISOString() : new Date().toISOString();
+        endDate = endMonthRaw ? monthValueToDate(endMonthRaw, true).toISOString() : null;
+      }
+    }
+
+    await apiFetch("/todos", token, {
+      method: "POST",
+      body: JSON.stringify({
         title: title.trim(),
-        priority: priority as "LOW" | "MEDIUM" | "HIGH",
-        // For recurring tasks use startDate/endDate, for one-off use dueDate
-        dueDate: isRecurring ? null : (dueDateRaw ? new Date(dueDateRaw) : null),
-        startDate: isRecurring ? (startDateRaw ? new Date(startDateRaw) : new Date()) : null,
-        endDate: isRecurring ? (endDateRaw ? new Date(endDateRaw) : null) : null,
+        priority,
+        dueDate: isRecurring ? null : (dueDateRaw || null),
+        startDate,
+        endDate,
         notes: notes?.trim() || null,
-        recurrence: recurrence as "NONE" | "DAILY" | "WEEKLY" | "MONTHLY",
-        user: { connect: { id: userId } },
-      },
+        recurrence,
+      }),
     });
   }
 
   if (intent === "toggle") {
     const id = formData.get("id") as string;
     const done = formData.get("done") === "true";
-    const todo = await db.todo.findUnique({ where: { id, userId } });
-    if (todo && !done && todo.dueDate) {
-      const due = new Date(todo.dueDate);
-      due.setHours(0, 0, 0, 0);
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      if (due.getTime() > today.getTime()) {
-        return { error: "Cannot mark a task done before its due date." };
-      }
-    }
-    await db.todo.updateMany({ where: { id, userId }, data: { done: !done } });
+    await apiFetch(`/todos/${id}/toggle`, token, {
+      method: "PATCH",
+      body: JSON.stringify({ done: !done }),
+    });
   }
 
   if (intent === "delete") {
     const id = formData.get("id") as string;
-    await db.todo.deleteMany({ where: { id, userId } });
+    await apiFetch(`/todos/${id}`, token, { method: "DELETE" });
   }
 
   if (intent === "edit") {
     const id = formData.get("id") as string;
     const title = formData.get("title") as string;
     if (!title || title.trim() === "") return { error: "Title cannot be empty" };
-    await db.todo.updateMany({ where: { id, userId }, data: { title: title.trim() } });
+    await apiFetch(`/todos/${id}`, token, {
+      method: "PATCH",
+      body: JSON.stringify({ title: title.trim() }),
+    });
   }
 
   if (intent === "add-subtask") {
     const todoId = formData.get("todoId") as string;
     const title = formData.get("subtaskTitle") as string;
     if (title?.trim()) {
-      await db.subtask.create({ data: { title: title.trim(), todoId } });
+      await apiFetch(`/todos/${todoId}/subtasks`, token, {
+        method: "POST",
+        body: JSON.stringify({ title: title.trim() }),
+      });
     }
   }
 
   if (intent === "toggle-subtask") {
     const id = formData.get("id") as string;
     const done = formData.get("done") === "true";
-    await db.subtask.update({ where: { id }, data: { done: !done } });
+    await apiFetch(`/todos/subtasks/${id}/toggle`, token, {
+      method: "PATCH",
+      body: JSON.stringify({ done: !done }),
+    });
   }
 
   if (intent === "delete-subtask") {
     const id = formData.get("id") as string;
-    await db.subtask.delete({ where: { id } });
+    await apiFetch(`/todos/subtasks/${id}`, token, { method: "DELETE" });
   }
 
   return null;
@@ -896,6 +905,40 @@ export default function Home() {
                         <input id="notes" name="notes" className="field-date" placeholder="Optional notes…" />
                       </div>
                     </div>
+                  ) : recurrence === "WEEKLY" ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                      <div className="extra-fields">
+                        <div>
+                          <label className="field-label" htmlFor="startWeek">Start Week</label>
+                          <input id="startWeek" type="week" name="startWeek" className="field-date" />
+                        </div>
+                        <div>
+                          <label className="field-label" htmlFor="endWeek">End Week</label>
+                          <input id="endWeek" type="week" name="endWeek" className="field-date" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="field-label" htmlFor="notes">Notes</label>
+                        <input id="notes" name="notes" className="field-date" placeholder="Optional notes…" />
+                      </div>
+                    </div>
+                  ) : recurrence === "MONTHLY" ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                      <div className="extra-fields">
+                        <div>
+                          <label className="field-label" htmlFor="startMonth">Start Month</label>
+                          <input id="startMonth" type="month" name="startMonth" className="field-date" />
+                        </div>
+                        <div>
+                          <label className="field-label" htmlFor="endMonth">End Month</label>
+                          <input id="endMonth" type="month" name="endMonth" className="field-date" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="field-label" htmlFor="notes">Notes</label>
+                        <input id="notes" name="notes" className="field-date" placeholder="Optional notes…" />
+                      </div>
+                    </div>
                   ) : (
                     <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
                       <div className="extra-fields">
@@ -1165,7 +1208,7 @@ export default function Home() {
         </div>
 
         <footer className="page-footer">
-          Built with <span>Remix</span> · <span>Prisma</span> · <span>PostgreSQL</span>
+          Built with <span>Remix</span> · <span>NestJS</span> · <span>PostgreSQL</span>
         </footer>
       </div>
 

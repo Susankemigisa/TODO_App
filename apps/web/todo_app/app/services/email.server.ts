@@ -1,8 +1,13 @@
 import { Resend } from "resend";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+function getResend() {
+  const key = process.env.RESEND_API_KEY;
+  if (!key) throw new Error("RESEND_API_KEY is not set");
+  return new Resend(key);
+}
 
 export async function sendPasswordResetEmail(email: string, code: string, name: string) {
+  const resend = getResend();
   await resend.emails.send({
     from: "TODO App <onboarding@resend.dev>",
     to: email,

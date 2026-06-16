@@ -1,8 +1,6 @@
 import { Form, useActionData } from "react-router";
 import { useState } from "react";
-import { db } from "../db.server";
 import { createUserSession } from "../session.server";
-import bcrypt from "bcryptjs";
 import type { Route } from "./+types/login";
 
 export async function action({ request }: Route.ActionArgs) {
@@ -14,17 +12,13 @@ export async function action({ request }: Route.ActionArgs) {
     return { error: "Email and password are required" };
   }
 
-  const user = await (db as any).user.findUnique({ where: { email } });
-  if (!user) {
-    return { error: "No account found with that email" };
+  try {
+    const { apiLogin } = await import("../utils/api.server");
+    const result = await apiLogin(email, password);
+    return createUserSession(result.user.id, result.access_token, "/");
+  } catch {
+    return { error: "Invalid email or password" };
   }
-
-  const valid = await bcrypt.compare(password, user.password);
-  if (!valid) {
-    return { error: "Incorrect password" };
-  }
-
-  return createUserSession(user.id, "/");
 }
 
 export function links() {
