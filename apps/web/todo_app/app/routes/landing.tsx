@@ -4,7 +4,7 @@ import type { Route } from "./+types/landing";
 
 export async function loader({ request }: Route.LoaderArgs) {
   const userId = await getUserId(request);
-  if (userId) return redirect("/");
+  if (userId) return redirect("/home");
   return {};
 }
 
