@@ -1,47 +1,27 @@
 import { redirect } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
 import { getGoogleUser } from "../services/google.server";
-import { db } from "../db.server";
 import { createUserSession } from "../session.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
-
   if (!code) return redirect("/login");
 
   try {
     const googleUser = await getGoogleUser(code);
 
-    // Find existing user or create new one
-    let user = await db.user.findFirst({
-      where: {
-        OR: [
-          { googleId: googleUser.googleId },
-          { email: googleUser.email },
-        ],
-      },
+    const API_URL = process.env.API_URL ?? "http://localhost:3001";
+    const res = await fetch(`${API_URL}/auth/google`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(googleUser),
     });
 
-    if (!user) {
-      // New user — create account
-      user = await db.user.create({
-        data: {
-          email: googleUser.email,
-          name: googleUser.name,
-          avatar: googleUser.avatar,
-          googleId: googleUser.googleId,
-        },
-      });
-    } else if (!user.googleId) {
-      // Existing email/password user — link their Google account
-      user = await db.user.update({
-        where: { id: user.id },
-        data: { googleId: googleUser.googleId, avatar: googleUser.avatar },
-      });
-    }
+    if (!res.ok) throw new Error("Google auth failed");
 
-    return createUserSession(user.id, "/");
+    const result = await res.json();
+    return createUserSession(result.user.id, result.access_token, "/");
   } catch (error) {
     console.error("Google auth error:", error);
     return redirect("/login?error=google");

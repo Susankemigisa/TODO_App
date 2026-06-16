@@ -1,8 +1,6 @@
 import { Form, useActionData, redirect } from "react-router";
 import { useState } from "react";
-import { db } from "../db.server";
 import { createUserSession } from "../session.server";
-import bcrypt from "bcryptjs";
 import type { Route } from "./+types/signup";
 
 export async function action({ request }: Route.ActionArgs) {
@@ -15,26 +13,31 @@ export async function action({ request }: Route.ActionArgs) {
   if (!name || !email || !password) {
     return { error: "All fields are required" };
   }
-
   if (password.length < 6) {
     return { error: "Password must be at least 6 characters" };
   }
-
   if (password !== confirm) {
     return { error: "Passwords do not match" };
   }
 
-  const existing = await db.user.findUnique({ where: { email } });
-  if (existing) {
-    return { error: "An account with that email already exists" };
+  try {
+    const API_URL = process.env.API_URL ?? "http://localhost:3001";
+    const res = await fetch(`${API_URL}/auth/signup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, email, password }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return { error: err.message ?? "An account with that email already exists" };
+    }
+
+    const result = await res.json();
+    return createUserSession(result.user.id, result.access_token, "/");
+  } catch {
+    return { error: "Something went wrong. Please try again." };
   }
-
-  const hashedPassword = await bcrypt.hash(password, 10);
-  const user = await db.user.create({
-    data: { name, email, password: hashedPassword },
-  });
-
-  return createUserSession(user.id, "/");
 }
 
 export function links() {

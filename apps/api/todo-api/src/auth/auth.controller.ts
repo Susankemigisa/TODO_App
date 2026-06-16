@@ -16,4 +16,19 @@ export class AuthController {
   me(@Request() req: any) {
     return this.authService.validateToken(req.user);
   }
+
+  @Post('google')
+  googleAuth(@Body() body: {
+    email: string;
+    name: string;
+    avatar: string;
+    googleId: string;
+  }) {
+    return this.authService.googleAuth(body);
+  }
+
+  @Post('signup')
+  signup(@Body() body: { name: string; email: string; password: string }) {
+    return this.authService.signup(body.name, body.email, body.password);
+  }
 }
