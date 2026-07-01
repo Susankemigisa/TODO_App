@@ -18,7 +18,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
       body: JSON.stringify(googleUser),
     });
 
-    if (!res.ok) throw new Error("Google auth failed");
+    if (!res.ok) {
+      const errorBody = await res.text();
+      console.error("NestJS /auth/google failed:", res.status, errorBody);
+      throw new Error(`Google auth failed: ${res.status} ${errorBody}`);
+    }
 
     const result = await res.json();
     return createUserSession(result.user.id, result.access_token, "/home");

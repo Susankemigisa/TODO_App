@@ -1,29 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Priority, Recurrence } from '@prisma/client';
+import { CreateTodoDto } from './dto/create-todo.dto';
+import { UpdateTodoDto } from './dto/update-todo.dto';
 
-export interface CreateTodoDto {
-  title: string;
-  notes?: string;
-  priority?: Priority;
-  dueDate?: string | null;
-  startDate?: string | null;
-  endDate?: string | null;
-  recurrence?: Recurrence;
-  userId: string;
-}
+export { CreateTodoDto } from './dto/create-todo.dto';
+export { UpdateTodoDto } from './dto/update-todo.dto';
 
-export interface UpdateTodoDto {
-  title?: string;
-  notes?: string;
-  done?: boolean;
-  priority?: Priority;
-  dueDate?: string | null;
-  startDate?: string | null;
-  endDate?: string | null;
-  recurrence?: Recurrence;
-  order?: number;
-}
+// userId is injected by the controller from the JWT — not sent by the client —
+// so it's layered on here rather than living in the Swagger-visible DTO.
+export type CreateTodoData = CreateTodoDto & { userId: string };
 
 @Injectable()
 export class TodosService {
@@ -50,32 +35,32 @@ export class TodosService {
     });
   }
 
-  create(dto: CreateTodoDto) {
-  return this.prisma.todo.create({
-    data: {
-      title: dto.title,
-      notes: dto.notes,
-      priority: dto.priority ?? 'MEDIUM',
-      dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
-      startDate: dto.startDate ? new Date(dto.startDate) : null,
-      endDate: dto.endDate ? new Date(dto.endDate) : null,
-      recurrence: dto.recurrence ?? 'NONE',
-      userId: dto.userId,
-    },
-  });
-}
+  create(dto: CreateTodoData) {
+    return this.prisma.todo.create({
+      data: {
+        title: dto.title,
+        notes: dto.notes,
+        priority: dto.priority ?? 'MEDIUM',
+        dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
+        startDate: dto.startDate ? new Date(dto.startDate) : null,
+        endDate: dto.endDate ? new Date(dto.endDate) : null,
+        recurrence: dto.recurrence ?? 'NONE',
+        userId: dto.userId,
+      },
+    });
+  }
 
   update(id: string, userId: string, dto: UpdateTodoDto) {
-  return this.prisma.todo.updateMany({
-    where: { id, userId },
-    data: {
-      ...dto,
-      dueDate: dto.dueDate ? new Date(dto.dueDate) : dto.dueDate === null ? null : undefined,
-      startDate: dto.startDate ? new Date(dto.startDate) : dto.startDate === null ? null : undefined,
-      endDate: dto.endDate ? new Date(dto.endDate) : dto.endDate === null ? null : undefined,
-    },
-  });
-}
+    return this.prisma.todo.updateMany({
+      where: { id, userId },
+      data: {
+        ...dto,
+        dueDate: dto.dueDate ? new Date(dto.dueDate) : dto.dueDate === null ? null : undefined,
+        startDate: dto.startDate ? new Date(dto.startDate) : dto.startDate === null ? null : undefined,
+        endDate: dto.endDate ? new Date(dto.endDate) : dto.endDate === null ? null : undefined,
+      },
+    });
+  }
 
   remove(id: string, userId: string) {
     return this.prisma.todo.deleteMany({
@@ -90,7 +75,6 @@ export class TodosService {
     });
   }
 
-  
   createSubtask(todoId: string, title: string) {
     return this.prisma.subtask.create({ data: { title, todoId } });
   }
