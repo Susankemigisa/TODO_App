@@ -12,7 +12,6 @@ export async function loader({ request }: Route.LoaderArgs) {
   const url = new URL(request.url);
   const filter = url.searchParams.get("filter") ?? "all";
   const search = url.searchParams.get("search") ?? "";
-  const showAll = url.searchParams.get("showAll") === "true";
 
   let allTodos: any[] = [];
   try {
@@ -91,14 +90,13 @@ export async function loader({ request }: Route.LoaderArgs) {
   if (todayTodos.length) groups.push({ label: "Today", todos: sortByDuePriority(todayTodos) });
   if (yesterdayTodos.length) groups.push({ label: "Yesterday", todos: sortByDuePriority(yesterdayTodos) });
   if (thisWeekTodos.length) groups.push({ label: "This Week", todos: sortByDuePriority(thisWeekTodos) });
-  const hasOlder = olderTodos.length > 0;
-  if (showAll && olderTodos.length) groups.push({ label: "Older", todos: sortByDuePriority(olderTodos) });
+  if (olderTodos.length) groups.push({ label: "Older", todos: sortByDuePriority(olderTodos) });
 
   const totalCount = allTodos.length;
   const activeCount = allTodos.filter((t: any) => !t.done).length;
   const completedCount = allTodos.filter((t: any) => t.done).length;
 
-  return { groups, filter, search, showAll, hasOlder, totalCount, activeCount, completedCount, user };
+  return { groups, filter, search, totalCount, activeCount, completedCount, user };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -291,7 +289,7 @@ const GLOBAL_VISIBLE = 3;
 
 export default function Home() {
   const actionData = useActionData<{ error?: string }>();
-  const { groups, filter, search, showAll, hasOlder, totalCount, activeCount, completedCount, user } =
+  const { groups, filter, search, totalCount, activeCount, completedCount, user } =
   useLoaderData<typeof loader>();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showFullForm, setShowFullForm] = useState(false);
@@ -1203,20 +1201,6 @@ export default function Home() {
               );
             })()}
 
-            {/* SHOW ALL OLDER BUTTON */}
-            {hasOlder && !showAll && (
-              <a
-                href={`?${new URLSearchParams({ filter, search, showAll: "true" }).toString()}`}
-                style={{
-                  display: "block", textAlign: "center", marginTop: "16px",
-                  padding: "10px", borderRadius: "10px", border: "1px dashed var(--border)",
-                  fontSize: "13px", color: "var(--text-muted)", textDecoration: "none",
-                  transition: "background 0.15s",
-                }}
-              >
-                Show older tasks
-              </a>
-            )}
           </div>
         </div>
 
