@@ -5,7 +5,9 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
+  useNavigate,
 } from "react-router";
+import { useEffect, useState } from "react";
 
 import type { Route } from "./+types/root";
 import "./app.css";
@@ -51,6 +53,83 @@ export default function App() {
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
+  const navigate = useNavigate();
+  const [seconds, setSeconds] = useState(8);
+
+  const isWakingUp = isRouteErrorResponse(error) && error.status === 503;
+
+  // Auto-retry once the countdown hits zero (Render cold starts
+  // usually finish within ~30-60s, so a couple of cycles is enough).
+  useEffect(() => {
+    if (!isWakingUp) return;
+    if (seconds <= 0) {
+      navigate(0); // reload the current route
+      return;
+    }
+    const t = setTimeout(() => setSeconds((s: number) => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [isWakingUp, seconds, navigate]);
+
+  if (isWakingUp) {
+    return (
+      <main
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "#0E0E0E",
+          color: "#F0EDE7",
+          fontFamily: '"DM Sans", "Inter", sans-serif',
+          padding: "1.5rem",
+        }}
+      >
+        <div
+          style={{
+            maxWidth: 420,
+            textAlign: "center",
+            background: "#1A1A1A",
+            borderRadius: 16,
+            padding: "2.5rem 2rem",
+            border: "1px solid rgba(201, 169, 110, 0.25)",
+          }}
+        >
+          <div style={{ fontSize: "2rem", marginBottom: "0.75rem" }}>☕</div>
+          <h1
+            style={{
+              fontFamily: '"DM Serif Display", serif',
+              fontSize: "1.5rem",
+              margin: "0 0 0.5rem",
+              color: "#C9A96E",
+            }}
+          >
+            Waking up the server…
+          </h1>
+          <p style={{ color: "#999", lineHeight: 1.6, margin: "0 0 1.5rem" }}>
+            The backend went to sleep after a period of inactivity. It usually
+            takes under a minute to come back. Retrying automatically in{" "}
+            <strong style={{ color: "#F0EDE7" }}>{seconds}s</strong>.
+          </p>
+          <button
+            onClick={() => navigate(0)}
+            style={{
+              background: "#C9A96E",
+              color: "#111111",
+              border: "none",
+              borderRadius: 8,
+              padding: "0.65rem 1.5rem",
+              fontWeight: 600,
+              fontSize: "0.95rem",
+              cursor: "pointer",
+            }}
+          >
+            Retry now
+          </button>
+        </div>
+      </main>
+    );
+  }
+
   let message = "Oops!";
   let details = "An unexpected error occurred.";
   let stack: string | undefined;
